@@ -2,7 +2,7 @@ apiVersion: v2
 name: hoverfly
 description: Hoverfly API simulator, with optional persistence of simulations across Pod restarts
 type: application
-version: 0.1.0
+version: 0.2.0
 appVersion: "v1.12.13"
 kubeVersion: ">=1.23.0-0"
 home: https://hoverfly.io
@@ -38,4 +38,22 @@ annotations:
       image: docker.io/spectolabs/hoverfly:v1.12.13
   artifacthub.io/changes: |
     - kind: added
-      description: Initial public release
+      description: hoverfly.mode selects the startup mode (simulate, capture, spy, diff, synthesize, modify)
+    - kind: added
+      description: hoverfly.captureOnMiss for -capture-on-miss in spy mode
+    - kind: added
+      description: Value validation rejects mode combinations Hoverfly ignores or exits on, including mode flags smuggled through hoverfly.extraArgs
+    - kind: added
+      description: CI installs the chart on a kind cluster across seven values files and verifies that a simulation survives a Pod replacement
+    - kind: added
+      description: Scenario guide in the chart README, from a throwaway mock to a recording proxy, plus an install note when no simulations are loaded yet
+    - kind: changed
+      description: Chart description no longer claims recorded simulations; the default values run in webserver mode, where capture is unavailable
+    - kind: fixed
+      description: snapshot.nativeSidecar is now rejected below Kubernetes 1.29 instead of rendering an init container that never exits
+    - kind: fixed
+      description: An explicit snapshot.image.tag is no longer shadowed by a pinned image.digest; tag and digest are inherited as a pair
+    - kind: fixed
+      description: Blanking out securityContext, podSecurityContext or a probe with null no longer fails to render
+    - kind: fixed
+      description: Nulling a section the templates read field by field now fails schema validation with a readable message instead of a nil pointer
