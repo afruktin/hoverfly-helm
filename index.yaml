@@ -5,6 +5,70 @@ entries:
       artifacthub.io/category: integration-delivery
       artifacthub.io/changes: |
         - kind: added
+          description: hoverfly.mode selects the startup mode (simulate, capture, spy, diff, synthesize, modify)
+        - kind: added
+          description: hoverfly.captureOnMiss for -capture-on-miss in spy mode
+        - kind: added
+          description: Value validation rejects mode combinations Hoverfly ignores or exits on, including mode flags smuggled through hoverfly.extraArgs
+        - kind: added
+          description: CI installs the chart on a kind cluster across seven values files and verifies that a simulation survives a Pod replacement
+        - kind: added
+          description: Scenario guide in the chart README, from a throwaway mock to a recording proxy, plus an install note when no simulations are loaded yet
+        - kind: changed
+          description: Chart description no longer claims recorded simulations; the default values run in webserver mode, where capture is unavailable
+        - kind: fixed
+          description: snapshot.nativeSidecar is now rejected below Kubernetes 1.29 instead of rendering an init container that never exits
+        - kind: fixed
+          description: An explicit snapshot.image.tag is no longer shadowed by a pinned image.digest; tag and digest are inherited as a pair
+        - kind: fixed
+          description: Blanking out securityContext, podSecurityContext or a probe with null no longer fails to render
+        - kind: fixed
+          description: Nulling a section the templates read field by field now fails schema validation with a readable message instead of a nil pointer
+      artifacthub.io/images: |
+        - name: hoverfly
+          image: docker.io/spectolabs/hoverfly:v1.12.13
+      artifacthub.io/license: MIT
+      artifacthub.io/links: |
+        - name: Chart source
+          url: https://github.com/afruktin/hoverfly-helm
+        - name: Hoverfly documentation
+          url: https://docs.hoverfly.io
+        - name: support
+          url: https://github.com/afruktin/hoverfly-helm/issues
+    apiVersion: v2
+    appVersion: v1.12.13
+    created: "2026-09-09T13:20:06.315434682Z"
+    description: Hoverfly API simulator, with optional persistence of simulations
+      across Pod restarts
+    digest: 6811200435cf48ffa1dd80c6f65ef5ea9012c53b5a286678c6bcc944115e7e2a
+    home: https://hoverfly.io
+    icon: https://raw.githubusercontent.com/SpectoLabs/hoverfly/master/docs/_static/logo-large.png
+    keywords:
+    - hoverfly
+    - api
+    - api-simulation
+    - service-virtualization
+    - mock
+    - stub
+    - testing
+    - proxy
+    kubeVersion: '>=1.23.0-0'
+    maintainers:
+    - email: 68115238+afruktin@users.noreply.github.com
+      name: Artyom Fruktin
+      url: https://github.com/afruktin
+    name: hoverfly
+    sources:
+    - https://github.com/afruktin/hoverfly-helm
+    - https://github.com/SpectoLabs/hoverfly
+    type: application
+    urls:
+    - https://github.com/afruktin/hoverfly-helm/releases/download/v0.2.0/hoverfly-0.2.0.tgz
+    version: 0.2.0
+  - annotations:
+      artifacthub.io/category: integration-delivery
+      artifacthub.io/changes: |
+        - kind: added
           description: Initial public release
       artifacthub.io/images: |
         - name: hoverfly
@@ -47,4 +111,4 @@ entries:
     urls:
     - https://github.com/afruktin/hoverfly-helm/releases/download/v0.1.0/hoverfly-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-09T09:18:54.531187769Z"
+generated: "2026-09-09T13:20:06.315447486Z"
