@@ -43,6 +43,10 @@ can have written the file), a force-delete with grace period 0 (`preStop` is ski
 in an OOMKill, so only the sidecar can have written it) and the same again behind `-auth`, which
 additionally exercises the sidecar's `/api/token-auth` exchange.
 
+Every values example in [charts/hoverfly/README.md](charts/hoverfly/README.md) is templated as
+well, by [.github/scripts/render-doc-examples.py](.github/scripts/render-doc-examples.py), so a
+renamed value or a new validation breaks the build rather than a reader's terminal.
+
 Two gaps worth knowing. kind cannot run anything near the 1.23 floor the chart advertises, so the
 lower bound of `kubeVersion` is only checked by rendering. And the Ingress is not installed in CI,
 because a cluster with no ingress controller cannot make it ready.

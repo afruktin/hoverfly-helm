@@ -86,6 +86,13 @@ jobs:
             done
           done
 
+      # Documentation drifts silently. Every values example in the chart README is
+      # templated here, so a renamed value or a new validation breaks the build
+      # rather than a reader's terminal.
+      - name: Render the README examples
+        if: steps.list-changed.outputs.changed == 'true'
+        run: python3 .github/scripts/render-doc-examples.py
+
   # `helm template` cannot tell whether the hardened securityContext lets the
   # process start, whether the PVC binds, or whether a native sidecar ever
   # reaches Ready. This job is the first thing in the repository that runs the

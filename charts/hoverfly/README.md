@@ -51,6 +51,135 @@ helm uninstall my-hoverfly
 
 The PVC is deleted with the release unless you set `persistence.retain=true`.
 
+## Scenarios
+
+Five shapes cover nearly everything this chart gets installed for. Each says what you get,
+what you still have to do after `helm install`, and what tends to go wrong.
+
+### A throwaway mock you fill at runtime
+
+The default values, nothing to configure.
+
+```console
+helm install my-hoverfly hoverfly/hoverfly
+```
+
+You get a Deployment, a Service and a ServiceAccount -- no PVC, no sidecar, no ConfigMap,
+no Secret, and no shell wrapper around the binary. Hoverfly starts **empty**: until a
+simulation is loaded, every request to the proxy port answers with an error rather than a
+mocked response.
+
+```console
+kubectl port-forward svc/my-hoverfly 8888:8888 8500:8500
+
+curl -X PUT -H 'Content-Type: application/json' \
+  --data-binary @simulation.json \
+  http://127.0.0.1:8888/api/v2/simulation
+
+curl http://127.0.0.1:8500/greeting
+```
+
+**Watch out:** what you post lives in the Pod's memory and nowhere else. A restart, a
+rollout, a node drain or an OOMKill takes it with them. If that matters, use the next one.
+
+### A shared mock that outlives the Pod
+
+A team posts simulations through the admin API and expects them to still be there
+tomorrow. This is what the persistence machinery exists for.
+
+```yaml
+persistence:
+  enabled: true
+  retain: true      # otherwise `helm uninstall` deletes the simulations with the PVC
+
+snapshot:
+  enabled: true     # covers OOMKill, where preStop never runs
+  intervalSeconds: 300
+```
+
+[Persisting simulations across restarts](#persisting-simulations-across-restarts) covers how
+the three moments -- startup import, periodic snapshot, preStop dump -- fit together.
+
+**Watch out:** a `ReadWriteOnce` volume pins you to one replica, and the chart says so at
+install time rather than letting a second Pod hang in `Pending`. And the *mode* is not part
+of a snapshot: if someone switches the running instance through the admin API, the Pod comes
+back in whatever `hoverfly.mode` says.
+
+### A mock defined in Git
+
+Simulations belong to the release rather than to whoever posted last. Reviewable,
+reproducible, and the only shape that scales past one replica.
+
+```yaml
+simulations:
+  inline:
+    catalogue.json: |
+      {"data": {"pairs": []}, "meta": {"schemaVersion": "v5.2"}}
+
+replicaCount: 3
+```
+
+Editing a simulation rolls the Pods, because the ConfigMap checksum is a Pod annotation. For
+larger sets, point `simulations.existingConfigMap` at a ConfigMap you build elsewhere. See
+[Supplying simulations declaratively](#supplying-simulations-declaratively).
+
+**Watch out:** combining this with persistence is legal but rarely what people mean. The
+persisted snapshot is imported *last* and therefore wins over the ConfigMap, so a stale
+runtime dump can quietly shadow the simulation you just committed.
+
+### Recording real traffic
+
+Hoverfly sits in front of a real dependency as a forward proxy and writes down what passes
+through it. See [Choosing a mode](#choosing-a-mode) for the neighbouring modes.
+
+```yaml
+hoverfly:
+  webserver: false            # capture needs a proxy, not a webserver
+  mode: capture
+  extraArgs:
+    - -dest=api.example.com   # repeatable; without it everything is recorded
+
+persistence:
+  enabled: true
+  retain: true
+
+snapshot:
+  enabled: true
+```
+
+Point the client at the Service:
+
+```console
+export HTTP_PROXY=http://my-hoverfly:8500
+export HTTPS_PROXY=http://my-hoverfly:8500
+```
+
+**Watch out, and this one is a security decision.** Intercepting HTTPS means Hoverfly signs
+certificates on the fly, and the CA it signs with is compiled into the upstream binary --
+**its private key is published in the Hoverfly source**. Trusting that CA on a machine lets
+anyone holding the same well-known key impersonate any site to it. Trust it only inside a
+disposable test client, never on a workstation or a shared base image. `-generate-ca-cert` is
+not a way out either: it writes the pair into the working directory, which this chart mounts
+read-only, so the Pod exits at startup instead.
+
+### Partial mocking against a real backend
+
+Known requests are answered from the simulation, everything else reaches the real service --
+and is recorded on the way through.
+
+```yaml
+hoverfly:
+  webserver: false
+  mode: spy
+  captureOnMiss: true
+
+persistence:
+  enabled: true
+```
+
+Useful when only part of a dependency needs faking, or to grow a simulation by using the
+system normally. The HTTPS caveat above applies unchanged.
+
 ## Choosing a mode
 
 `hoverfly.mode` decides what Hoverfly does with the traffic it receives.
