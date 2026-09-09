@@ -38,7 +38,8 @@ jobs:
           skip_existing: true
         env:
           CR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Single-chart repo: tag as v0.2.0 instead of the cr default hoverfly-0.2.0.
+          # Single-chart repo: tag releases v<version> instead of the cr default
+          # <chart>-<version>.
           # Safe only while this repo holds exactly one chart -- with two charts
           # sharing a version the tags would collide.
           CR_RELEASE_NAME_TEMPLATE: "v{{ .Version }}"
