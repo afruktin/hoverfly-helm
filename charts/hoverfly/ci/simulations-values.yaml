@@ -1,0 +1,32 @@
+# Simulations supplied declaratively through a ConfigMap, alongside persistence.
+#
+# What a green run proves: the ConfigMap is mounted read-only, the repeated
+# `-import` flags are accepted in the documented order (ConfigMap first, persisted
+# snapshot last), and a malformed simulation would be caught here rather than in
+# production -- Hoverfly calls log.Fatal on an import it cannot parse, which turns
+# into a CrashLoopBackOff that `--wait` reports.
+simulations:
+  inline:
+    ci-greeting.json: |
+      {
+        "data": {
+          "pairs": [
+            {
+              "request": {
+                "method": [{"matcher": "exact", "value": "GET"}],
+                "path": [{"matcher": "exact", "value": "/ci/greeting"}]
+              },
+              "response": {
+                "status": 200,
+                "body": "hello from the ConfigMap",
+                "encodedBody": false
+              }
+            }
+          ]
+        },
+        "meta": {"schemaVersion": "v5.2"}
+      }
+
+persistence:
+  enabled: true
+  size: 128Mi

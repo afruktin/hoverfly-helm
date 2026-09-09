@@ -1,7 +1,7 @@
 # Hoverfly Helm chart
 
 Helm chart for the [Hoverfly](https://hoverfly.io) API simulator, with optional persistence
-of recorded simulations across Pod restarts. Packaged into a Helm repository hosted on
+of simulations across Pod restarts. Packaged into a Helm repository hosted on
 GitHub Pages.
 
 ## Usage
@@ -29,10 +29,23 @@ helm unittest charts/hoverfly
 ct lint --config .github/ct.yaml
 ```
 
-CI never touches a live cluster: it lints the chart and renders the templates. The hardened
-`securityContext`, the `preStop` dump and `snapshot.nativeSidecar` (which needs Kubernetes
-1.29+) are only exercised on a real install, so verify those against a cluster before
-relying on them.
+CI runs the chart on a real cluster. A [kind](https://kind.sigs.k8s.io) node is created for
+every pull request, and `ct install` installs the chart once per file in
+[charts/hoverfly/ci/](charts/hoverfly/ci/) -- defaults, persistence, the snapshot sidecar in
+both its plain and native form, `-auth`, declarative simulations and proxy mode -- waiting for
+readiness and running the `helm test` hook each time. Each file says in its header what a green
+run proves.
+
+A second job, [.github/scripts/e2e-persistence.sh](.github/scripts/e2e-persistence.sh), covers
+what an install alone cannot: it posts a simulation, replaces the Pod and checks the simulation
+is still being served. It does that three times -- a graceful restart (only the `preStop` hook
+can have written the file), a force-delete with grace period 0 (`preStop` is skipped, exactly as
+in an OOMKill, so only the sidecar can have written it) and the same again behind `-auth`, which
+additionally exercises the sidecar's `/api/token-auth` exchange.
+
+Two gaps worth knowing. kind cannot run anything near the 1.23 floor the chart advertises, so the
+lower bound of `kubeVersion` is only checked by rendering. And the Ingress is not installed in CI,
+because a cluster with no ingress controller cannot make it ready.
 
 `charts/hoverfly/README.md` is written by hand: it documents the common values, and
 `charts/hoverfly/values.yaml` is the full reference. Keep both in step when adding a value.

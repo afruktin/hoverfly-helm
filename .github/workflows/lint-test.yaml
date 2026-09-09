@@ -7,11 +7,13 @@ on:
     paths:
       - 'charts/**'
       - '.github/workflows/lint-test.yaml'
+      - '.github/scripts/**'
       - '.github/ct.yaml'
   pull_request:
     paths:
       - 'charts/**'
       - '.github/workflows/lint-test.yaml'
+      - '.github/scripts/**'
       - '.github/ct.yaml'
 
 # Cancel superseded runs on the same branch.
@@ -19,9 +21,17 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Published with kind v0.33.0. The oldest node image current kind supports, so
+  # it is the closest thing to what users actually run -- and still well past the
+  # 1.29 that `snapshot.nativeSidecar` needs.
+  KIND_NODE_IMAGE: kindest/node:v1.34.11@sha256:44e222ee2132dab25ff87301682f89eb82c7880ea3a1bf543bfe9708fd08d67d
+
 jobs:
   lint-test:
     runs-on: ubuntu-latest
+    outputs:
+      changed: ${{ steps.list-changed.outputs.changed }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -61,3 +71,79 @@ jobs:
       - name: Run unit tests
         if: steps.list-changed.outputs.changed == 'true'
         run: helm unittest charts/hoverfly
+
+      # kind cannot give us anything near the floor the chart advertises, so the
+      # lower bound of `kubeVersion` is only ever checked by rendering.
+      - name: Render at the declared kubeVersion bounds
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          for kube in 1.23.0 1.34.0; do
+            for values in charts/hoverfly/ci/*-values.yaml; do
+              echo "--- kube-version=$kube $values"
+              helm template rel charts/hoverfly \
+                --kube-version "$kube" \
+                --values "$values" >/dev/null
+            done
+          done
+
+  # `helm template` cannot tell whether the hardened securityContext lets the
+  # process start, whether the PVC binds, or whether a native sidecar ever
+  # reaches Ready. This job is the first thing in the repository that runs the
+  # chart on a cluster: `ct install` installs it once per ci/*-values.yaml file,
+  # waits for readiness and runs the `helm test` hook.
+  install:
+    needs: lint-test
+    if: needs.lint-test.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+          check-latest: true
+
+      - name: Set up chart-testing
+        uses: helm/chart-testing-action@v2.7.0
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.15.0
+        with:
+          node_image: ${{ env.KIND_NODE_IMAGE }}
+          cluster_name: chart-testing
+
+      - name: Run chart-testing install
+        run: ct install --config .github/ct.yaml
+
+  # `ct install` never restarts anything, so it cannot exercise the one feature
+  # this chart exists for. This job posts a simulation, replaces the Pod and
+  # checks the simulation is still being served.
+  e2e-persistence:
+    needs: lint-test
+    if: needs.lint-test.outputs.changed == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Helm
+        uses: azure/setup-helm@v4
+        with:
+          version: v3.16.3
+
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.15.0
+        with:
+          node_image: ${{ env.KIND_NODE_IMAGE }}
+          cluster_name: e2e-persistence
+
+      - name: Simulations survive a Pod replacement
+        run: .github/scripts/e2e-persistence.sh

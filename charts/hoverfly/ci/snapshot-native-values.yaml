@@ -1,0 +1,16 @@
+# The same sidecar, but as a Kubernetes native sidecar: an initContainer with
+# `restartPolicy: Always`.
+#
+# What a green run proves: the API is accepted by the cluster (it needs
+# Kubernetes >= 1.29, which is why CI pins the kind node image) and the Pod still
+# reaches Ready -- a native sidecar that never becomes ready blocks the main
+# container from starting at all, so this failure mode is invisible to
+# `helm template` and only shows up here.
+persistence:
+  enabled: true
+  size: 128Mi
+
+snapshot:
+  enabled: true
+  intervalSeconds: 5
+  nativeSidecar: true

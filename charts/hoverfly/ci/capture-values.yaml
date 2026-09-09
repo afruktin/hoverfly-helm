@@ -1,0 +1,10 @@
+# Forward-proxy mode instead of the webserver default.
+#
+# What a green run proves: the chart's mode handling produces a Hoverfly that
+# actually boots -- `-capture` and `-webserver` together would make it exit with
+# "Two or more modes supplied", and the chart's job is to make that combination
+# unrepresentable. Also confirms the probes work against the admin port while the
+# proxy port speaks HTTP CONNECT rather than plain HTTP.
+hoverfly:
+  webserver: false
+  mode: capture

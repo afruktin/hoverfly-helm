@@ -1,0 +1,18 @@
+{
+  "data": {
+    "pairs": [
+      {
+        "request": {
+          "method": [{"matcher": "exact", "value": "GET"}],
+          "path": [{"matcher": "exact", "value": "/e2e/greeting"}]
+        },
+        "response": {
+          "status": 200,
+          "body": "hello-from-e2e",
+          "encodedBody": false
+        }
+      }
+    ]
+  },
+  "meta": {"schemaVersion": "v5.2"}
+}
