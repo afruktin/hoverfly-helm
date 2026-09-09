@@ -1,0 +1,50 @@
+apiVersion: v1
+entries:
+  hoverfly:
+  - annotations:
+      artifacthub.io/category: integration-delivery
+      artifacthub.io/changes: |
+        - kind: added
+          description: Initial public release
+      artifacthub.io/images: |
+        - name: hoverfly
+          image: docker.io/spectolabs/hoverfly:v1.12.13
+      artifacthub.io/license: MIT
+      artifacthub.io/links: |
+        - name: Chart source
+          url: https://github.com/afruktin/hoverfly-helm
+        - name: Hoverfly documentation
+          url: https://docs.hoverfly.io
+        - name: support
+          url: https://github.com/afruktin/hoverfly-helm/issues
+    apiVersion: v2
+    appVersion: v1.12.13
+    created: "2026-09-09T09:07:05.795712495Z"
+    description: Hoverfly API simulator, with optional persistence of recorded simulations
+      across Pod restarts
+    digest: 139adee49a315827f53ff5e651fe714331178102b3ed61d812edc6522b506df7
+    home: https://hoverfly.io
+    icon: https://raw.githubusercontent.com/SpectoLabs/hoverfly/master/docs/_static/logo-large.png
+    keywords:
+    - hoverfly
+    - api
+    - api-simulation
+    - service-virtualization
+    - mock
+    - stub
+    - testing
+    - proxy
+    kubeVersion: '>=1.23.0-0'
+    maintainers:
+    - email: 68115238+afruktin@users.noreply.github.com
+      name: Artyom Fruktin
+      url: https://github.com/afruktin
+    name: hoverfly
+    sources:
+    - https://github.com/afruktin/hoverfly-helm
+    - https://github.com/SpectoLabs/hoverfly
+    type: application
+    urls:
+    - https://github.com/afruktin/hoverfly-helm/releases/download/hoverfly-0.2.0/hoverfly-0.2.0.tgz
+    version: 0.2.0
+generated: "2026-09-09T09:07:05.795726992Z"
