@@ -1,3 +1,4 @@
+[![Artifact Hub](https://img.shields.io/endpoint?url=https://artifacthub.io/badge/repository/hoverfly)](https://artifacthub.io/packages/search?repo=hoverfly)
 # Hoverfly Helm chart
 
 Helm chart for the [Hoverfly](https://hoverfly.io) API simulator, with optional persistence
