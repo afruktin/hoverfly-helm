@@ -29,6 +29,11 @@ helm unittest charts/hoverfly
 ct lint --config .github/ct.yaml
 ```
 
+On Helm 3, append `--version v1.0.3`. From v1.1.0 the plugin declares
+`platformHooks` in its manifest, which only Helm 4 understands -- Helm 3 unpacks the
+plugin and then refuses to load it. CI runs Helm 3 deliberately, so v1.0.3 is what the
+suites are verified against.
+
 CI runs the chart on a real cluster. A [kind](https://kind.sigs.k8s.io) node is created for
 every pull request, and `ct install` installs the chart once per file in
 [charts/hoverfly/ci/](charts/hoverfly/ci/) -- defaults, persistence, the snapshot sidecar in
