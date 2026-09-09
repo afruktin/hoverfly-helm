@@ -24,7 +24,9 @@ concurrency:
 env:
   # Published with kind v0.33.0. The oldest node image current kind supports, so
   # it is the closest thing to what users actually run -- and still well past the
-  # 1.29 that `snapshot.nativeSidecar` needs.
+  # 1.29 that `snapshot.nativeSidecar` needs. That floor is hard: the chart
+  # rejects ci/snapshot-native-values.yaml below 1.29 on purpose, so any node
+  # image added here has to stay at or above it.
   KIND_NODE_IMAGE: kindest/node:v1.34.11@sha256:44e222ee2132dab25ff87301682f89eb82c7880ea3a1bf543bfe9708fd08d67d
 
 jobs:
@@ -44,13 +46,14 @@ jobs:
         with:
           version: v3.16.3
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-          check-latest: true
-
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.7.0
+        # v2.8.0 or newer: earlier releases pinned yamale 4.0.4, whose parser
+        # still referenced ast.Num / ast.Str / ast.NameConstant. Those were
+        # removed in Python 3.12, so ct died with an AttributeError as soon as
+        # the runner's interpreter moved on. Since v2.8.0 the action installs
+        # ct through uv, into a venv it owns, so the chart no longer depends on
+        # whatever Python the runner happens to ship.
+        uses: helm/chart-testing-action@v2.8.0
 
       - name: Find changed charts
         id: list-changed
@@ -111,6 +114,9 @@ jobs:
       # Documentation drifts silently. Every values example in the chart README is
       # templated here, so a renamed value or a new validation breaks the build
       # rather than a reader's terminal.
+      # The script is standard library only, so the runner's own python3 is
+      # enough -- no setup-python step to pin, and nothing to break when the
+      # image's interpreter moves.
       - name: Render the README examples
         if: steps.list-changed.outputs.changed == 'true'
         run: python3 .github/scripts/render-doc-examples.py
@@ -135,13 +141,14 @@ jobs:
         with:
           version: v3.16.3
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-          check-latest: true
-
       - name: Set up chart-testing
-        uses: helm/chart-testing-action@v2.7.0
+        # v2.8.0 or newer: earlier releases pinned yamale 4.0.4, whose parser
+        # still referenced ast.Num / ast.Str / ast.NameConstant. Those were
+        # removed in Python 3.12, so ct died with an AttributeError as soon as
+        # the runner's interpreter moved on. Since v2.8.0 the action installs
+        # ct through uv, into a venv it owns, so the chart no longer depends on
+        # whatever Python the runner happens to ship.
+        uses: helm/chart-testing-action@v2.8.0
 
       - name: Create kind cluster
         uses: helm/kind-action@v1.15.0
