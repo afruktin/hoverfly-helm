@@ -19,3 +19,5 @@
 # a bare `tests/` would also match templates/tests/, silently dropping the
 # `helm test` hook.
 /tests/
+# ci/ values files are for chart-testing only; they add nothing to the package.
+/ci/

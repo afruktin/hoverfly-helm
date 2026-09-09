@@ -1,0 +1,166 @@
+# Startup modes. The mode is not part of the persisted snapshot -- Hoverfly keeps
+# it in its config, not in the simulation -- so it can only come from a flag, and
+# the flag can only come from these values. Every guard here mirrors a place where
+# Hoverfly either exits at startup or silently ignores what it was asked to do.
+suite: modes
+templates:
+  - templates/deployment.yaml
+release:
+  name: rel
+  namespace: testing
+tests:
+  - it: adds no mode flag for the default simulate mode
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: -capture
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: -spy
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: -simulate
+
+  - it: renders the capture flag
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: capture
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -capture
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: -webserver
+
+  - it: renders the spy flag
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: spy
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -spy
+
+  - it: renders the diff flag
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: diff
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -diff
+
+  - it: renders the synthesize flag once middleware is supplied
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: synthesize
+      hoverfly.middleware: http://middleware.svc.cluster.local:8080/
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -synthesize
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -middleware=http://middleware.svc.cluster.local:8080/
+
+  - it: renders the modify flag once middleware is supplied
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: modify
+      hoverfly.middleware: http://middleware.svc.cluster.local:8080/
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -modify
+
+  - it: renders capture-on-miss alongside spy
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: spy
+      hoverfly.captureOnMiss: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -spy
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -capture-on-miss
+
+  # --- guards -------------------------------------------------------------
+  # Hoverfly short-circuits to simulate when -webserver is set, before it looks
+  # at any mode flag. It neither warns nor exits, so without this guard the mode
+  # would just be ignored.
+  - it: rejects a non-simulate mode while running as a webserver
+    set:
+      hoverfly.mode: capture
+    asserts:
+      - failedTemplate:
+          errorPattern: is ignored while hoverfly.webserver=true
+
+  - it: rejects synthesize without middleware
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: synthesize
+    asserts:
+      - failedTemplate:
+          errorPattern: requires hoverfly.middleware to be set
+
+  - it: rejects modify without middleware
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: modify
+    asserts:
+      - failedTemplate:
+          errorPattern: requires hoverfly.middleware to be set
+
+  - it: rejects capture-on-miss outside spy mode
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: capture
+      hoverfly.captureOnMiss: true
+    asserts:
+      - failedTemplate:
+          errorPattern: requires hoverfly.mode=spy
+
+  - it: rejects a mode flag smuggled through extraArgs
+    set:
+      hoverfly.webserver: false
+      hoverfly.mode: capture
+      hoverfly.extraArgs:
+        - -spy
+    asserts:
+      - failedTemplate:
+          errorPattern: which selects a startup mode
+
+  - it: rejects a mode flag in extraArgs written with two dashes and a value
+    set:
+      hoverfly.extraArgs:
+        - --diff=true
+    asserts:
+      - failedTemplate:
+          errorPattern: which selects a startup mode
+
+  - it: rejects webserver smuggled through extraArgs
+    set:
+      hoverfly.webserver: false
+      hoverfly.extraArgs:
+        - -webserver
+    asserts:
+      - failedTemplate:
+          errorPattern: which selects a startup mode
+
+  # The guard matches on the flag name, so a flag that merely starts with a mode
+  # name must still get through.
+  - it: leaves unrelated extraArgs alone
+    set:
+      hoverfly.extraArgs:
+        - -metrics
+        - -journal-indexing-key=Request.Path
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -metrics
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -journal-indexing-key=Request.Path

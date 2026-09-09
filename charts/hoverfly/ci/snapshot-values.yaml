@@ -1,0 +1,15 @@
+# Persistence plus the periodic snapshot sidecar, as a plain container.
+#
+# What a green run proves: the sidecar starts under its own hardened
+# securityContext, shares the PVC with the main container, and survives its first
+# snapshot cycles -- a crash inside the loop would show up as a restarting
+# container and fail `--wait`.
+#
+# 5s instead of the 600s default so several cycles run inside the install window.
+persistence:
+  enabled: true
+  size: 128Mi
+
+snapshot:
+  enabled: true
+  intervalSeconds: 5

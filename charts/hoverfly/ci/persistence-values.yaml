@@ -1,0 +1,12 @@
+# Persistence without the snapshot sidecar: the preStop path on its own.
+#
+# What a green run proves: the PVC binds on a cluster with only a default
+# StorageClass, fsGroup makes the volume writable for UID 65534, `strategy:
+# Recreate` is accepted, and the shell wrapper that conditionally appends
+# `-import` starts cleanly when the state file does not exist yet.
+#
+# 128Mi rather than the 1Gi default: CI clusters provision this for real and a
+# simulation dump is kilobytes.
+persistence:
+  enabled: true
+  size: 128Mi

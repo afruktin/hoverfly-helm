@@ -7,6 +7,21 @@ Reach it from your machine:
 
   kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "hoverfly.fullname" . }} {{ .Values.service.adminPort }}:{{ .Values.service.adminPort }} {{ .Values.service.proxyPort }}:{{ .Values.service.proxyPort }}
   curl http://127.0.0.1:{{ .Values.service.adminPort }}/api/health
+{{- if not (or .Values.simulations.inline .Values.simulations.existingConfigMap .Values.simulations.extraImports) }}
+
+Nothing is simulated yet. Until you load a simulation, every request to port
+{{ .Values.service.proxyPort }} answers with an error rather than a mocked response:
+
+  curl -X PUT -H 'Content-Type: application/json' \
+    --data-binary @simulation.json \
+    http://127.0.0.1:{{ .Values.service.adminPort }}/api/v2/simulation
+{{- if .Values.auth.enabled }}
+
+  (the admin API is protected -- add the Authorization header shown below)
+{{- end }}
+
+Set `simulations.inline` to have the chart load them for you on every start.
+{{- end }}
 {{- if .Values.ingress.enabled }}
 
 Ingress hosts:

@@ -1,0 +1,12 @@
+# Stock defaults, overriding nothing.
+#
+# chart-testing installs a chart once per ci/*-values.yaml file and stops using
+# the plain defaults as soon as this directory exists, so this file is what keeps
+# the default path covered. `replicaCount: 1` is already the default -- the point
+# is the file, not the value.
+#
+# What a green run proves: the hardened securityContext (non-root UID 65534,
+# read-only root filesystem, all capabilities dropped) actually lets Hoverfly
+# start, the shell-free `command: [/bin/hoverfly]` path works, and `helm test`
+# reaches /api/health.
+replicaCount: 1

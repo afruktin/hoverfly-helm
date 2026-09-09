@@ -1,0 +1,20 @@
+# Admin API behind -auth, together with persistence and the snapshot sidecar.
+#
+# What a green run proves: /api/health stays public under `-auth` so the probes
+# and `helm test` keep working, and the snapshot helper can still reach the admin
+# API -- it has to exchange the credentials for a token at /api/token-auth first,
+# which is the most fragile part of the sidecar.
+#
+# The password is a throwaway for an ephemeral CI cluster, not a secret.
+auth:
+  enabled: true
+  username: ci
+  password: ci-not-a-secret
+
+persistence:
+  enabled: true
+  size: 128Mi
+
+snapshot:
+  enabled: true
+  intervalSeconds: 5

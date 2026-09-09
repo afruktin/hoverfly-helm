@@ -102,7 +102,19 @@ Fully qualified image reference. A digest, when set, wins over the tag.
 Image used by the snapshot sidecar. Unset fields fall back to .Values.image.
 */}}
 {{- define "hoverfly.snapshot.image" -}}
-{{- $image := merge (deepCopy (.Values.snapshot.image | default dict)) (deepCopy .Values.image) -}}
+{{- $override := .Values.snapshot.image | default dict -}}
+{{- $base := deepCopy .Values.image -}}
+{{- /*
+tag and digest name the same thing two different ways, and `hoverfly.image`
+prefers the digest. Inheriting them field by field would therefore let the main
+image's digest silently outrank an explicit snapshot.image.tag -- the sidecar
+would run whatever the main image is pinned to. Drop both from the inherited
+half as soon as the override supplies either one.
+*/ -}}
+{{- if or $override.tag $override.digest -}}
+{{- $base = omit $base "tag" "digest" -}}
+{{- end -}}
+{{- $image := merge (deepCopy $override) $base -}}
 {{- include "hoverfly.image" (dict "Values" (dict "image" $image) "Chart" .Chart) -}}
 {{- end }}
 
@@ -187,6 +199,15 @@ string, so no value here can break out of its argument.
 {{- $args = append $args (printf "-pp=%v" .Values.hoverfly.proxyPort) -}}
 {{- if .Values.hoverfly.webserver -}}
 {{- $args = append $args "-webserver" -}}
+{{- else -}}
+{{- $modeFlags := dict "capture" "-capture" "spy" "-spy" "diff" "-diff" "synthesize" "-synthesize" "modify" "-modify" -}}
+{{- $modeFlag := index $modeFlags .Values.hoverfly.mode -}}
+{{- if $modeFlag -}}
+{{- $args = append $args $modeFlag -}}
+{{- end -}}
+{{- if .Values.hoverfly.captureOnMiss -}}
+{{- $args = append $args "-capture-on-miss" -}}
+{{- end -}}
 {{- end -}}
 {{- with .Values.hoverfly.logLevel -}}
 {{- $args = append $args (printf "-log-level=%s" .) -}}
@@ -337,9 +358,30 @@ otherwise surface as a stuck Pod or a confusing API error.
 */}}
 {{- define "hoverfly.validateValues" -}}
 {{- $errors := list -}}
+{{- if and .Values.hoverfly.webserver (ne .Values.hoverfly.mode "simulate") -}}
+{{- $errors = append $errors (printf "  - hoverfly.mode=%q is ignored while hoverfly.webserver=true.\n    Hoverfly resolves the startup mode with `if webserver { return simulate }` before it looks at any\n    mode flag, so it neither warns nor fails -- it just runs in simulate mode.\n    Set hoverfly.webserver=false to use this mode." .Values.hoverfly.mode) -}}
+{{- end -}}
+{{- if and (has .Values.hoverfly.mode (list "synthesize" "modify")) (not .Values.hoverfly.middleware) -}}
+{{- $errors = append $errors (printf "  - hoverfly.mode=%q requires hoverfly.middleware to be set; Hoverfly exits at startup otherwise,\n    which turns into a CrashLoopBackOff. On Kubernetes prefer remote middleware -- an http:// URL\n    pointing at a separate Deployment -- because the hoverfly image ships no script runtime." .Values.hoverfly.mode) -}}
+{{- end -}}
+{{- if and .Values.hoverfly.captureOnMiss (ne .Values.hoverfly.mode "spy") -}}
+{{- $errors = append $errors "  - hoverfly.captureOnMiss=true requires hoverfly.mode=spy. Hoverfly exits with\n    \"-capture-on-miss can only be used with -spy mode\" for any other mode." -}}
+{{- end -}}
+{{- $modeFlagNames := list "capture" "spy" "diff" "synthesize" "modify" "webserver" -}}
+{{- range .Values.hoverfly.extraArgs -}}
+{{- $flag := . | trimPrefix "-" | trimPrefix "-" | splitList "=" | first -}}
+{{- if has $flag $modeFlagNames -}}
+{{- $errors = append $errors (printf "  - hoverfly.extraArgs contains %q, which selects a startup mode. Use hoverfly.mode and\n    hoverfly.webserver instead: Hoverfly exits with \"Two or more modes supplied\" when it sees\n    more than one mode flag, and a mode set this way is invisible to the chart's validation." .) -}}
+{{- end -}}
+{{- end -}}
 {{- if and .Values.persistence.enabled (gt (int .Values.replicaCount) 1) -}}
 {{- if not (has "ReadWriteMany" .Values.persistence.accessModes) -}}
 {{- $errors = append $errors "  - persistence.enabled=true with replicaCount>1 requires persistence.accessModes to contain ReadWriteMany.\n    With ReadWriteOnce only one Pod can attach the volume and the others stay Pending forever.\n    Either set replicaCount=1, or use a ReadWriteMany StorageClass." -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.persistence.enabled .Values.snapshot.enabled .Values.snapshot.nativeSidecar -}}
+{{- if not (semverCompare ">=1.29.0-0" .Capabilities.KubeVersion.Version) -}}
+{{- $errors = append $errors (printf "  - snapshot.nativeSidecar=true needs Kubernetes 1.29 or newer; this cluster reports %s.\n    A native sidecar is an initContainer carrying `restartPolicy: Always`, and an older kubelet simply\n    ignores that field: the snapshot loop would run as an ordinary init container, never exit, and the\n    Pod would never reach the main container.\n    Set snapshot.nativeSidecar=false to get a plain sidecar container instead." .Capabilities.KubeVersion.Version) -}}
 {{- end -}}
 {{- end -}}
 {{- if and .Values.auth.enabled (not .Values.auth.existingSecret) (not .Values.auth.password) -}}
