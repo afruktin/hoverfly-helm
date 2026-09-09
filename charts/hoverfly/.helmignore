@@ -1,0 +1,21 @@
+.DS_Store
+.git/
+.gitignore
+.bzr/
+.bzrignore
+.hg/
+.hgignore
+.svn/
+*.swp
+*.bak
+*.tmp
+*.orig
+*~
+.project
+.idea/
+*.tmproj
+.vscode/
+# Unit tests must not ship inside the package. Anchored with a leading slash:
+# a bare `tests/` would also match templates/tests/, silently dropping the
+# `helm test` hook.
+/tests/

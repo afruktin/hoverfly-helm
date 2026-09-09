@@ -1,0 +1,4 @@
+# Invalid on purpose: exercises the ingress.hosts guard.
+ingress:
+  enabled: true
+  hosts: []

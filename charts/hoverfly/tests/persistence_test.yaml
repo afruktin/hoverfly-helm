@@ -1,0 +1,159 @@
+# Persistence is the reason this chart exists: without it hoverfly keeps every
+# simulation in memory and loses it on restart. These cover the parts that fail
+# silently -- wrong storageClassName semantics, a shared scratch file, a sidecar
+# in the wrong place in the Pod spec.
+suite: persistence
+release:
+  name: rel
+  namespace: testing
+tests:
+  - it: wires the volume, the preStop dump and a Recreate strategy
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+    asserts:
+      # ReadWriteOnce cannot be attached by two Pods, so a rolling update would
+      # deadlock: the new Pod waits for a volume the old Pod still holds.
+      - equal:
+          path: spec.strategy.type
+          value: Recreate
+      - contains:
+          path: spec.template.spec.containers[0].volumeMounts
+          content:
+            name: data
+            mountPath: /data
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: rel-hoverfly-data
+      - exists:
+          path: spec.template.spec.containers[0].lifecycle.preStop
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOVERFLY_STATE_FILE
+            value: "/data/simulation.json"
+      # Flags reach the wrapper through "$@" and are never spliced into the
+      # script body, so no value can break out of its quoting.
+      - equal:
+          path: spec.template.spec.containers[0].command[0]
+          value: /bin/sh
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: set -- "\$@" -import "\$\{HOVERFLY_STATE_FILE\}"
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: exec /bin/hoverfly "\$@"
+
+  - it: keeps a rolling update when the volume is ReadWriteMany
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.accessModes:
+        - ReadWriteMany
+    asserts:
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+
+  - it: gives the preStop hook and the snapshot sidecar separate scratch files
+    # Regression: both used to write ${STATE_FILE}.tmp, so a snapshot landing
+    # during shutdown could truncate the file the preStop dump was renaming.
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].name
+          value: snapshotter
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOVERFLY_STATE_TMP
+            value: "/data/simulation.json.prestop.tmp"
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: HOVERFLY_STATE_TMP
+            value: "/data/simulation.json.snapshot.tmp"
+
+  - it: runs the snapshotter as a native sidecar on request
+    # An init container with restartPolicy Always is stopped after the main
+    # container, so the final preStop dump cannot be raced by a snapshot.
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+      snapshot.nativeSidecar: true
+    asserts:
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+      - equal:
+          path: spec.template.spec.initContainers[0].name
+          value: snapshotter
+      - equal:
+          path: spec.template.spec.initContainers[0].restartPolicy
+          value: Always
+
+  - it: omits storageClassName so the cluster default applies
+    templates:
+      - templates/pvc.yaml
+    set:
+      persistence.enabled: true
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.storageClassName
+      - equal:
+          path: spec.resources.requests.storage
+          value: 1Gi
+
+  - it: disables dynamic provisioning when storageClass is a dash
+    templates:
+      - templates/pvc.yaml
+    set:
+      persistence.enabled: true
+      persistence.storageClass: "-"
+    asserts:
+      - equal:
+          path: spec.storageClassName
+          value: ""
+
+  - it: keeps the PVC on uninstall when retain is set
+    templates:
+      - templates/pvc.yaml
+    set:
+      persistence.enabled: true
+      persistence.retain: true
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/resource-policy"]
+          value: keep
+
+  - it: mounts an existing claim instead of creating a PVC
+    templates:
+      - templates/pvc.yaml
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: my-claim
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/pvc.yaml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: data
+            persistentVolumeClaim:
+              claimName: my-claim
+        template: templates/deployment.yaml

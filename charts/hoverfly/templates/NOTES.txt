@@ -1,0 +1,61 @@
+{{ .Chart.Name }} {{ .Chart.AppVersion }} was installed as release {{ .Release.Name }} in namespace {{ .Release.Namespace }}.
+
+Admin API and dashboard : port {{ .Values.service.adminPort }} (Service port name "admin")
+Proxy / webserver       : port {{ .Values.service.proxyPort }} (Service port name "proxy")
+
+Reach it from your machine:
+
+  kubectl --namespace {{ .Release.Namespace }} port-forward svc/{{ include "hoverfly.fullname" . }} {{ .Values.service.adminPort }}:{{ .Values.service.adminPort }} {{ .Values.service.proxyPort }}:{{ .Values.service.proxyPort }}
+  curl http://127.0.0.1:{{ .Values.service.adminPort }}/api/health
+{{- if .Values.ingress.enabled }}
+
+Ingress hosts:
+{{- range .Values.ingress.hosts }}
+{{- $host := .host }}
+{{- $scheme := "http" }}
+{{- range $.Values.ingress.tls }}{{ if has $host .hosts }}{{ $scheme = "https" }}{{ end }}{{ end }}
+{{- range .paths }}
+  {{ $scheme }}://{{ $host }}{{ .path }}  ->  {{ default "proxy" .servicePortName }}
+{{- end }}
+{{- end }}
+{{- end }}
+{{- if .Values.auth.enabled }}
+
+The admin API is protected. /api/health stays public, so the probes keep working.
+{{- if .Values.auth.existingSecret }}
+Credentials come from the existing Secret {{ .Values.auth.existingSecret | quote }}.
+{{- else }}
+Read the generated credentials:
+
+  kubectl --namespace {{ .Release.Namespace }} get secret {{ include "hoverfly.auth.secretName" . }} -o jsonpath="{.data.{{ .Values.auth.usernameKey }}}" | base64 -d
+  kubectl --namespace {{ .Release.Namespace }} get secret {{ include "hoverfly.auth.secretName" . }} -o jsonpath="{.data.{{ .Values.auth.passwordKey }}}" | base64 -d
+{{- end }}
+
+Obtain a token, then call the API with it:
+
+  TOKEN=$(curl -sX POST http://127.0.0.1:{{ .Values.service.adminPort }}/api/token-auth -d '{"username":"USER","password":"PASS"}' | sed -n 's/.*"token":"\([^"]*\)".*/\1/p')
+  curl -H "Authorization: Bearer $TOKEN" http://127.0.0.1:{{ .Values.service.adminPort }}/api/v2/simulation
+{{- end }}
+{{- if .Values.persistence.enabled }}
+
+Simulations are persisted to {{ include "hoverfly.stateFile" . }} on PVC {{ include "hoverfly.pvcName" . }}.
+The preStop hook writes a snapshot on shutdown{{ if .Values.snapshot.enabled }}, and a sidecar writes one every {{ .Values.snapshot.intervalSeconds }}s{{ end }}; the next start imports it back.
+{{- if not .Values.snapshot.enabled }}
+
+  Warning: snapshot.enabled=false. An OOMKill or node failure skips preStop, so
+  everything recorded since the last deploy is lost.
+{{- end }}
+{{- if and (not .Values.persistence.existingClaim) (not .Values.persistence.retain) }}
+
+  Warning: persistence.retain=false. `helm uninstall` deletes the PVC and every
+  stored simulation with it. Set persistence.retain=true to keep it.
+{{- end }}
+{{- else }}
+
+Simulations live in memory only, so a restart loses them. Set persistence.enabled=true
+to keep them across restarts, or supply them declaratively through `simulations`.
+{{- end }}
+
+Verify the release:
+
+  helm --namespace {{ .Release.Namespace }} test {{ .Release.Name }}

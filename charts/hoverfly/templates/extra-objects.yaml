@@ -1,0 +1,4 @@
+{{- range .Values.extraObjects }}
+---
+{{ include "hoverfly.tplvalues" (dict "value" . "context" $) }}
+{{- end }}

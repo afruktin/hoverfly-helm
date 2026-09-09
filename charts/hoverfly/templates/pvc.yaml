@@ -1,0 +1,30 @@
+{{- if and .Values.persistence.enabled (not .Values.persistence.existingClaim) -}}
+{{- $annotations := merge (deepCopy .Values.persistence.annotations) (deepCopy .Values.commonAnnotations) -}}
+{{- if .Values.persistence.retain -}}
+{{- $annotations = merge $annotations (dict "helm.sh/resource-policy" "keep") -}}
+{{- end -}}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "hoverfly.pvcName" . }}
+  labels:
+    {{- include "hoverfly.labels" . | nindent 4 }}
+    {{- with .Values.persistence.labels }}
+    {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  accessModes:
+    {{- toYaml .Values.persistence.accessModes | nindent 4 }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.size | quote }}
+  {{- if eq .Values.persistence.storageClass "-" }}
+  storageClassName: ""
+  {{- else if .Values.persistence.storageClass }}
+  storageClassName: {{ .Values.persistence.storageClass | quote }}
+  {{- end }}
+{{- end }}

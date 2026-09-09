@@ -1,0 +1,47 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "hoverfly.fullname" . }}-test-connection
+  labels:
+    {{- include "hoverfly.labels" . | nindent 4 }}
+  annotations:
+    helm.sh/hook: test
+    helm.sh/hook-delete-policy: before-hook-creation,hook-succeeded
+spec:
+  restartPolicy: Never
+  {{- with .Values.imagePullSecrets }}
+  imagePullSecrets:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- with .Values.podSecurityContext }}
+  securityContext:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  containers:
+    - name: test
+      image: {{ include "hoverfly.image" . | quote }}
+      imagePullPolicy: {{ .Values.image.pullPolicy }}
+      {{- with .Values.securityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      env:
+        - name: HOVERFLY_HEALTH_URL
+          value: "http://{{ include "hoverfly.fullname" . }}:{{ .Values.service.adminPort }}/api/health"
+      command:
+        - /bin/sh
+        - -c
+        - |
+          set -eu
+          echo "GET ${HOVERFLY_HEALTH_URL}"
+          wget -q -O - "${HOVERFLY_HEALTH_URL}"
+      {{- if .Values.securityContext.readOnlyRootFilesystem }}
+      volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+      {{- end }}
+  {{- if .Values.securityContext.readOnlyRootFilesystem }}
+  volumes:
+    - name: tmp
+      emptyDir: {}
+  {{- end }}

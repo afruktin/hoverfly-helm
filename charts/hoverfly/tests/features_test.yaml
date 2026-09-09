@@ -1,0 +1,284 @@
+# Optional features (auth, declarative simulations, ingress) and every guard
+# that refuses an invalid combination. The guards are here because a `fail`
+# branch is code that never runs unless something exercises it.
+suite: features
+release:
+  name: rel
+  namespace: testing
+tests:
+  # --- admin API authentication ------------------------------------------
+  - it: stores the credentials in a Secret and keeps them out of the Deployment
+    templates:
+      - templates/secret.yaml
+      - templates/deployment.yaml
+    set:
+      auth.enabled: true
+      auth.username: admin
+      auth.password: topsecret123
+    asserts:
+      - equal:
+          path: metadata.name
+          value: rel-hoverfly-auth
+        template: templates/secret.yaml
+      - equal:
+          path: data.username
+          value: YWRtaW4=
+        template: templates/secret.yaml
+      - equal:
+          path: data.password
+          value: dG9wc2VjcmV0MTIz
+        template: templates/secret.yaml
+      # The password must reach the container only through secretKeyRef --
+      # neither in the clear nor base64-encoded anywhere in the Deployment.
+      - notMatchRegexRaw:
+          pattern: topsecret123
+        template: templates/deployment.yaml
+      - notMatchRegexRaw:
+          pattern: dG9wc2VjcmV0MTIz
+        template: templates/deployment.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOVERFLY_ADMIN_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: rel-hoverfly-auth
+                key: password
+        template: templates/deployment.yaml
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: -auth -username "\$\{HOVERFLY_ADMIN_USERNAME\}" -password "\$\{HOVERFLY_ADMIN_PASSWORD\}"
+        template: templates/deployment.yaml
+      - exists:
+          path: spec.template.metadata.annotations["checksum/auth"]
+        template: templates/deployment.yaml
+
+  - it: reads an existing Secret under the configured keys
+    templates:
+      - templates/secret.yaml
+      - templates/deployment.yaml
+    set:
+      auth.enabled: true
+      auth.existingSecret: my-creds
+      auth.usernameKey: HF_USER
+      auth.passwordKey: HF_PASS
+    asserts:
+      - hasDocuments:
+          count: 0
+        template: templates/secret.yaml
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOVERFLY_ADMIN_USERNAME
+            valueFrom:
+              secretKeyRef:
+                name: my-creds
+                key: HF_USER
+        template: templates/deployment.yaml
+
+  - it: authenticates the snapshot helper against the admin API
+    # /api/v2/simulation is protected once auth is on, so both the preStop dump
+    # and the sidecar have to fetch a token first or persistence silently stops.
+    templates:
+      - templates/deployment.yaml
+    set:
+      auth.enabled: true
+      auth.password: topsecret123
+      persistence.enabled: true
+      snapshot.enabled: true
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].lifecycle.preStop.exec.command[2]
+          pattern: /api/token-auth
+      - matchRegex:
+          path: spec.template.spec.containers[0].lifecycle.preStop.exec.command[2]
+          pattern: "Authorization: Bearer"
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: HOVERFLY_AUTH_ENABLED
+            value: "true"
+
+  - it: keeps the helm test probe on the unauthenticated health endpoint
+    templates:
+      - templates/tests/test-connection.yaml
+    set:
+      auth.enabled: true
+      auth.password: topsecret123
+    asserts:
+      - equal:
+          path: metadata.annotations["helm.sh/hook"]
+          value: test
+      - contains:
+          path: spec.containers[0].env
+          content:
+            name: HOVERFLY_HEALTH_URL
+            value: "http://rel-hoverfly:8888/api/health"
+
+  # --- declarative simulations -------------------------------------------
+  - it: renders inline simulations into a ConfigMap and imports them
+    templates:
+      - templates/configmap.yaml
+      - templates/deployment.yaml
+    set:
+      simulations.inline:
+        basic.json: '{"data":{},"meta":{"schemaVersion":"v5.2"}}'
+    asserts:
+      - equal:
+          path: metadata.name
+          value: rel-hoverfly-simulations
+        template: templates/configmap.yaml
+      - equal:
+          path: data["basic.json"]
+          value: |
+            {"data":{},"meta":{"schemaVersion":"v5.2"}}
+        template: templates/configmap.yaml
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -import=/simulations/basic.json
+        template: templates/deployment.yaml
+      - contains:
+          path: spec.template.spec.volumes
+          content:
+            name: simulations
+            configMap:
+              name: rel-hoverfly-simulations
+        template: templates/deployment.yaml
+      - exists:
+          path: spec.template.metadata.annotations["checksum/simulations"]
+        template: templates/deployment.yaml
+
+  - it: imports the persisted snapshot last so it wins over the baseline
+    # -import is repeatable and last-one-wins, so runtime state must be appended
+    # after the ConfigMap baseline -- and it is appended by the shell wrapper.
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      simulations.inline:
+        basic.json: '{"data":{},"meta":{"schemaVersion":"v5.2"}}'
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -import=/simulations/basic.json
+      - matchRegex:
+          path: spec.template.spec.containers[0].command[2]
+          pattern: set -- "\$@" -import "\$\{HOVERFLY_STATE_FILE\}"
+
+  # --- ingress ------------------------------------------------------------
+  - it: splits admin and proxy paths across one host
+    templates:
+      - templates/ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.className: nginx
+      ingress.hosts:
+        - host: hoverfly.example.com
+          paths:
+            - path: /api/v2
+              pathType: Prefix
+              servicePortName: admin
+            - path: /
+              pathType: Prefix
+    asserts:
+      - equal:
+          path: spec.ingressClassName
+          value: nginx
+      - equal:
+          path: spec.rules[0].host
+          value: hoverfly.example.com
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.name
+          value: rel-hoverfly
+      - equal:
+          path: spec.rules[0].http.paths[0].backend.service.port.name
+          value: admin
+      # An omitted servicePortName falls back to the proxy port.
+      - equal:
+          path: spec.rules[0].http.paths[1].backend.service.port.name
+          value: proxy
+
+  - it: preserves multi-line annotations instead of flattening them
+    # Regression: annotations used to be rendered with range + quote, which
+    # turned an nginx configuration-snippet into a single escaped line.
+    templates:
+      - templates/ingress.yaml
+    set:
+      ingress.enabled: true
+      ingress.hosts:
+        - host: hoverfly.example.com
+          paths:
+            - path: /
+              pathType: Prefix
+      ingress.annotations:
+        nginx.ingress.kubernetes.io/configuration-snippet: |
+          more_set_headers "X-One: 1";
+          more_set_headers "X-Two: 2";
+    asserts:
+      - equal:
+          path: metadata.annotations["nginx.ingress.kubernetes.io/configuration-snippet"]
+          value: |
+            more_set_headers "X-One: 1";
+            more_set_headers "X-Two: 2";
+
+  # --- guards -------------------------------------------------------------
+  - it: rejects multiple replicas on a ReadWriteOnce volume
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      replicaCount: 2
+    asserts:
+      - failedTemplate:
+          errorPattern: requires persistence.accessModes to contain ReadWriteMany
+
+  - it: rejects retain together with an existing claim
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.existingClaim: my-claim
+      persistence.retain: true
+    asserts:
+      - failedTemplate:
+          errorPattern: persistence.retain has no effect with persistence.existingClaim
+
+  - it: rejects auth without any credential source
+    templates:
+      - templates/deployment.yaml
+    set:
+      auth.enabled: true
+      auth.password: ""
+    asserts:
+      - failedTemplate:
+          errorPattern: requires either auth.password or auth.existingSecret
+
+  - it: rejects inline simulations together with an existing ConfigMap
+    templates:
+      - templates/deployment.yaml
+    set:
+      simulations.existingConfigMap: my-sims
+      simulations.inline:
+        basic.json: "{}"
+    asserts:
+      - failedTemplate:
+          errorPattern: mutually exclusive
+
+  - it: rejects existingConfigMapFiles without an existing ConfigMap
+    templates:
+      - templates/deployment.yaml
+    set:
+      simulations.existingConfigMapFiles:
+        - one.json
+    asserts:
+      - failedTemplate:
+          errorPattern: simulations.existingConfigMapFiles is set but simulations.existingConfigMap is empty
+
+  - it: rejects an ingress without any host
+    templates:
+      - templates/deployment.yaml
+    values:
+      - values/ingress-no-hosts.yaml
+    asserts:
+      - failedTemplate:
+          errorPattern: requires at least one entry in ingress.hosts

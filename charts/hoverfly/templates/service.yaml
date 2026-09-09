@@ -1,0 +1,51 @@
+{{- $annotations := merge (deepCopy .Values.service.annotations) (deepCopy .Values.commonAnnotations) -}}
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "hoverfly.fullname" . }}
+  labels:
+    {{- include "hoverfly.labels" . | nindent 4 }}
+    {{- with .Values.service.labels }}
+    {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 4 }}
+    {{- end }}
+  {{- with $annotations }}
+  annotations:
+    {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  {{- with .Values.service.clusterIP }}
+  clusterIP: {{ . }}
+  {{- end }}
+  {{- if eq .Values.service.type "LoadBalancer" }}
+  {{- with .Values.service.loadBalancerIP }}
+  loadBalancerIP: {{ . }}
+  {{- end }}
+  {{- with .Values.service.loadBalancerSourceRanges }}
+  loadBalancerSourceRanges:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  {{- if and .Values.service.externalTrafficPolicy (has .Values.service.type (list "NodePort" "LoadBalancer")) }}
+  externalTrafficPolicy: {{ .Values.service.externalTrafficPolicy }}
+  {{- end }}
+  {{- with .Values.service.sessionAffinity }}
+  sessionAffinity: {{ . }}
+  {{- end }}
+  ports:
+    - name: admin
+      port: {{ .Values.service.adminPort }}
+      targetPort: admin
+      protocol: TCP
+      {{- if and .Values.service.adminNodePort (has .Values.service.type (list "NodePort" "LoadBalancer")) }}
+      nodePort: {{ .Values.service.adminNodePort }}
+      {{- end }}
+    - name: proxy
+      port: {{ .Values.service.proxyPort }}
+      targetPort: proxy
+      protocol: TCP
+      {{- if and .Values.service.proxyNodePort (has .Values.service.type (list "NodePort" "LoadBalancer")) }}
+      nodePort: {{ .Values.service.proxyNodePort }}
+      {{- end }}
+  selector:
+    {{- include "hoverfly.selectorLabels" . | nindent 4 }}

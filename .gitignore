@@ -1,0 +1,15 @@
+# Packaged charts and chart-releaser output
+*.tgz
+.cr-release-packages/
+.cr-index/
+
+# Helm dependencies
+charts/*/charts/
+charts/*/Chart.lock
+charts/*/requirements.lock
+
+# Local tooling
+.DS_Store
+.idea/
+.vscode/
+*.swp

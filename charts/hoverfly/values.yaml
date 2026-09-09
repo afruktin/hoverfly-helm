@@ -1,0 +1,332 @@
+# -- Number of Hoverfly replicas.
+# Note that simulations live in each Pod's memory: with more than one replica the
+# instances diverge unless every simulation is supplied through `simulations`.
+replicaCount: 1
+
+image:
+  # -- Container image registry. Set to `""` to use an unqualified repository.
+  registry: docker.io
+  # -- Container image repository.
+  repository: spectolabs/hoverfly
+  # -- Container image tag.
+  # @default -- `.Chart.AppVersion`
+  tag: ""
+  # -- Container image digest (for example `sha256:abc...`). Takes precedence over `tag`.
+  digest: ""
+  # -- Image pull policy.
+  pullPolicy: IfNotPresent
+
+# -- Image pull secrets for the Pod, for example `[{name: my-registry}]`.
+imagePullSecrets: []
+
+# -- Override the chart name used to build resource names.
+nameOverride: ""
+# -- Override the fully qualified resource name.
+fullnameOverride: ""
+
+# -- Labels added to every object. Values may contain Go template syntax.
+commonLabels: {}
+# -- Annotations added to every object. Values may contain Go template syntax.
+commonAnnotations: {}
+
+serviceAccount:
+  # -- Create a ServiceAccount for the Pod.
+  create: true
+  # -- Mount the ServiceAccount token. Hoverfly does not talk to the Kubernetes API.
+  automount: false
+  # -- Annotations for the ServiceAccount.
+  annotations: {}
+  # -- Name of the ServiceAccount.
+  # @default -- the fullname template
+  name: ""
+
+hoverfly:
+  # -- Admin API and dashboard port (`-ap`).
+  adminPort: 8888
+  # -- Proxy / webserver port (`-pp`).
+  proxyPort: 8500
+  # -- Interface to bind (`-listen-on-host`). Must stay `0.0.0.0` in Kubernetes,
+  # otherwise Hoverfly only listens on loopback and the Pod never becomes Ready.
+  listenOnHost: "0.0.0.0"
+  # -- Run as a webserver in simulate mode instead of a forward proxy (`-webserver`).
+  webserver: true
+  # -- Log level (`-log-level`): panic, fatal, error, warn, info or debug.
+  logLevel: info
+  # -- Log format (`-logs`): plaintext or json.
+  logsFormat: plaintext
+  # -- Number of journal entries kept in memory (`-journal-size`). `0` disables the flag.
+  journalSize: 1000
+  # -- Size of the request/response cache (`-cache-size`). `0` disables the flag.
+  cacheSize: 1000
+  # -- Disable the request/response cache (`-disable-cache`).
+  disableCache: false
+  # -- Verify TLS certificates of upstream hosts (`-tls-verification`).
+  tlsVerification: true
+  # -- Enable CORS support (`-cors`).
+  cors: false
+  # -- Upstream proxy to route traffic through (`-upstream-proxy`).
+  upstreamProxy: ""
+  # -- Middleware to run, as `<binary> <script path>` (`-middleware`).
+  middleware: ""
+  # -- Regex limiting which destinations are intercepted (`-destination`).
+  destination: ""
+  # -- Additional raw flags appended verbatim, for example `["-spy", "-journal-size=5000"]`.
+  extraArgs: []
+
+auth:
+  # -- Protect the admin API with a username and password (`-auth`).
+  # `/api/health` stays public, so probes keep working.
+  enabled: false
+  # -- Admin username.
+  username: hoverfly
+  # -- Admin password. Required unless `auth.existingSecret` is set.
+  # Avoid control characters: the value is sent as a JSON string by the snapshot helper.
+  password: ""
+  # -- Use an existing Secret instead of creating one.
+  existingSecret: ""
+  # -- Key holding the username inside the Secret.
+  usernameKey: username
+  # -- Key holding the password inside the Secret.
+  passwordKey: password
+
+simulations:
+  # -- Simulations rendered into a ConfigMap and imported on startup.
+  # Map of file name to simulation JSON, for example
+  # `{"basic.json": "{\"data\": {...}, \"meta\": {...}}"}`.
+  inline: {}
+  # -- Import simulations from an existing ConfigMap instead. Mutually exclusive with `inline`.
+  existingConfigMap: ""
+  # -- Keys of `existingConfigMap` to import. Required to import anything from it.
+  existingConfigMapFiles: []
+  # -- Extra `-import` sources passed verbatim (URLs, or paths you mounted yourself).
+  extraImports: []
+  # -- Where the simulations ConfigMap is mounted.
+  mountPath: /simulations
+
+# Hoverfly keeps simulations in memory and never writes them to disk on its own.
+# With persistence enabled, the preStop hook dumps `/api/v2/simulation` onto a volume
+# and the next start imports it back, so recorded traffic survives a restart.
+persistence:
+  # -- Persist simulations across Pod restarts on a PersistentVolumeClaim.
+  # This also installs the preStop hook that dumps the simulation to the volume on
+  # shutdown; there is no separate switch for it.
+  enabled: false
+  # -- Use an existing PVC instead of creating one.
+  existingClaim: ""
+  # -- StorageClass for the PVC. `""` uses the cluster default; `"-"` disables dynamic provisioning.
+  storageClass: ""
+  # -- Access modes for the PVC.
+  accessModes:
+    - ReadWriteOnce
+  # -- Size of the PVC.
+  size: 1Gi
+  # -- Where the volume is mounted.
+  mountPath: /data
+  # -- File name of the snapshot inside `mountPath`.
+  filename: simulation.json
+  # -- Annotations for the PVC.
+  annotations: {}
+  # -- Labels for the PVC.
+  labels: {}
+  # -- Keep the PVC on `helm uninstall` (`helm.sh/resource-policy: keep`).
+  retain: false
+
+snapshot:
+  # -- Run a sidecar that periodically dumps the simulation to the volume, so an
+  # OOMKill (where preStop never runs) loses at most one interval of traffic.
+  # Only takes effect together with `persistence.enabled`.
+  enabled: false
+  # -- Seconds between snapshots.
+  intervalSeconds: 600
+  # -- Run as a native sidecar (init container with `restartPolicy: Always`) so it
+  # terminates after the main container. Requires Kubernetes >= 1.29.
+  nativeSidecar: false
+  # -- Image overrides for the sidecar. Unset fields fall back to `image`.
+  image: {}
+  # -- Resource requests and limits for the sidecar.
+  resources:
+    limits:
+      cpu: 50m
+      memory: 32Mi
+    requests:
+      cpu: 10m
+      memory: 16Mi
+  # -- Container security context for the sidecar.
+  # @default -- same hardening as `securityContext`
+  securityContext:
+    allowPrivilegeEscalation: false
+    readOnlyRootFilesystem: true
+    capabilities:
+      drop:
+        - ALL
+
+service:
+  # -- Service type.
+  type: ClusterIP
+  # -- Service port exposing the admin API.
+  adminPort: 8888
+  # -- Service port exposing the proxy / webserver.
+  proxyPort: 8500
+  # -- NodePort for the admin API. Only used when `service.type` is NodePort or LoadBalancer.
+  adminNodePort: ""
+  # -- NodePort for the proxy. Only used when `service.type` is NodePort or LoadBalancer.
+  proxyNodePort: ""
+  # -- Annotations for the Service.
+  annotations: {}
+  # -- Extra labels for the Service.
+  labels: {}
+  # -- Static cluster IP.
+  clusterIP: ""
+  # -- Static load balancer IP.
+  loadBalancerIP: ""
+  # -- Source ranges allowed to reach a LoadBalancer Service.
+  loadBalancerSourceRanges: []
+  # -- External traffic policy (`Cluster` or `Local`).
+  externalTrafficPolicy: ""
+  # -- Session affinity.
+  sessionAffinity: None
+
+ingress:
+  # -- Create an Ingress.
+  enabled: false
+  # -- IngressClass name.
+  className: ""
+  # -- Annotations for the Ingress.
+  annotations: {}
+  # -- Extra labels for the Ingress.
+  labels: {}
+  # -- Host rules. Each path may target a named Service port through
+  # `servicePortName`, which is how the admin API and the proxy get split
+  # across one hostname.
+  hosts:
+    - host: hoverfly.local
+      paths:
+        - path: /api/v2
+          pathType: Prefix
+          servicePortName: admin
+        - path: /api/health
+          pathType: Prefix
+          servicePortName: admin
+        - path: /dashboard
+          pathType: Prefix
+          servicePortName: admin
+        - path: /
+          pathType: Prefix
+          servicePortName: proxy
+  # -- TLS configuration, for example `[{secretName: hoverfly-tls, hosts: [hoverfly.local]}]`.
+  tls: []
+
+# -- Liveness probe. Set `enabled: false` to drop it; every other field is passed through verbatim.
+livenessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: admin
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Readiness probe. Set `enabled: false` to drop it; every other field is passed through verbatim.
+readinessProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: admin
+  initialDelaySeconds: 5
+  periodSeconds: 10
+  timeoutSeconds: 2
+  failureThreshold: 3
+  successThreshold: 1
+
+# -- Startup probe. Gives a large `-import` time to finish before the liveness
+# probe starts killing the container.
+startupProbe:
+  enabled: true
+  httpGet:
+    path: /api/health
+    port: admin
+  initialDelaySeconds: 2
+  periodSeconds: 3
+  timeoutSeconds: 2
+  failureThreshold: 30
+  successThreshold: 1
+
+# -- Resource requests and limits for the hoverfly container.
+resources: {}
+#  limits:
+#    cpu: 200m
+#    memory: 500Mi
+#  requests:
+#    cpu: 100m
+#    memory: 400Mi
+
+# -- Pod security context. The upstream image runs as root by default, so the
+# chart pins an unprivileged UID.
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65534
+  runAsGroup: 65534
+  fsGroup: 65534
+  seccompProfile:
+    type: RuntimeDefault
+
+# -- Container security context. The hoverfly binary is statically linked and
+# writes nothing to the root filesystem under the chart's defaults.
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+# -- Annotations for the Pod.
+podAnnotations: {}
+# -- Extra labels for the Pod.
+podLabels: {}
+
+# -- Node selector for Pod scheduling.
+nodeSelector: {}
+# -- Tolerations for Pod scheduling.
+tolerations: []
+# -- Affinity rules for Pod scheduling.
+affinity: {}
+# -- Topology spread constraints.
+topologySpreadConstraints: []
+# -- PriorityClass name.
+priorityClassName: ""
+# -- Scheduler name.
+schedulerName: ""
+# -- Pod DNS policy.
+dnsPolicy: ""
+# -- Pod DNS config.
+dnsConfig: {}
+# -- Host aliases added to `/etc/hosts`.
+hostAliases: []
+
+# -- Grace period for shutdown. Must leave the preStop snapshot time to finish.
+terminationGracePeriodSeconds: 30
+# -- Number of old ReplicaSets kept.
+revisionHistoryLimit: 10
+
+# -- Deployment update strategy. Forced to `Recreate` when persistence uses a
+# ReadWriteOnce volume, because two Pods cannot attach it at once.
+updateStrategy:
+  type: RollingUpdate
+
+# -- Extra environment variables for the hoverfly container.
+extraEnv: []
+# -- Extra `envFrom` sources for the hoverfly container.
+extraEnvFrom: []
+# -- Extra volumes for the Pod.
+extraVolumes: []
+# -- Extra volume mounts for the hoverfly container.
+extraVolumeMounts: []
+# -- Extra init containers.
+initContainers: []
+# -- Extra sidecar containers.
+sidecars: []
+# -- Extra raw manifests rendered alongside the chart. Entries may be strings
+# containing Go template syntax.
+extraObjects: []

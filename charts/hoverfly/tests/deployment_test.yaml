@@ -1,0 +1,93 @@
+suite: deployment
+templates:
+  - templates/deployment.yaml
+release:
+  name: rel
+  namespace: testing
+tests:
+  - it: renders one unwrapped container with the standard labels
+    asserts:
+      - equal:
+          path: spec.selector.matchLabels
+          value:
+            app.kubernetes.io/name: hoverfly
+            app.kubernetes.io/instance: rel
+      - notExists:
+          path: spec.selector.matchLabels.app
+      - equal:
+          path: metadata.labels["app.kubernetes.io/managed-by"]
+          value: Helm
+      - lengthEqual:
+          path: spec.template.spec.containers
+          count: 1
+      # Neither persistence nor auth is on, so hoverfly is exec'd directly and
+      # there is no shell wrapper to get quoting wrong in.
+      - equal:
+          path: spec.template.spec.containers[0].command
+          value:
+            - /bin/hoverfly
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -ap=8888
+      - equal:
+          path: spec.strategy.type
+          value: RollingUpdate
+      # `enabled` is a chart-level switch and must not leak into the probe object.
+      - equal:
+          path: spec.template.spec.containers[0].livenessProbe.httpGet.path
+          value: /api/health
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe.enabled
+
+  - it: takes the image tag from the chart appVersion
+    asserts:
+      - matchRegex:
+          path: spec.template.spec.containers[0].image
+          pattern: ^docker\.io/spectolabs/hoverfly:v[0-9]+\.[0-9]+\.[0-9]+$
+
+  - it: prefers a digest over a tag and drops an empty registry
+    set:
+      image.registry: ""
+      image.tag: v1.11.0
+      image.digest: sha256:deadbeef
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: spectolabs/hoverfly@sha256:deadbeef
+
+  - it: honours nameOverride without swallowing the release name
+    set:
+      nameOverride: hf
+    asserts:
+      - equal:
+          path: metadata.name
+          value: rel-hf
+      - equal:
+          path: spec.selector.matchLabels["app.kubernetes.io/name"]
+          value: hf
+
+  - it: builds the flag list from typed values and drops the ones switched off
+    set:
+      hoverfly.webserver: false
+      hoverfly.journalSize: 0
+      hoverfly.extraArgs:
+        - -spy
+    asserts:
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: -webserver
+      - notContains:
+          path: spec.template.spec.containers[0].args
+          content: -journal-size=0
+      - contains:
+          path: spec.template.spec.containers[0].args
+          content: -spy
+
+  - it: omits a probe that is disabled
+    set:
+      livenessProbe.enabled: false
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - exists:
+          path: spec.template.spec.containers[0].readinessProbe

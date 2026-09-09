@@ -1,0 +1,216 @@
+{{- include "hoverfly.validateValues" . }}
+{{- $rwo := and .Values.persistence.enabled (not (has "ReadWriteMany" .Values.persistence.accessModes)) -}}
+{{- $sidecar := and .Values.persistence.enabled .Values.snapshot.enabled -}}
+{{- $tmp := or .Values.securityContext.readOnlyRootFilesystem (and $sidecar (.Values.snapshot.securityContext).readOnlyRootFilesystem) -}}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hoverfly.fullname" . }}
+  labels:
+    {{- include "hoverfly.labels" . | nindent 4 }}
+  {{- with (include "hoverfly.annotations" .) }}
+  annotations:
+    {{- . | nindent 4 }}
+  {{- end }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  revisionHistoryLimit: {{ .Values.revisionHistoryLimit }}
+  {{- if $rwo }}
+  # A ReadWriteOnce volume cannot be attached by an old and a new Pod at once.
+  strategy:
+    type: Recreate
+  {{- else }}
+  {{- with .Values.updateStrategy }}
+  strategy:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "hoverfly.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "hoverfly.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 8 }}
+        {{- end }}
+      {{- $podAnnotations := merge (deepCopy .Values.podAnnotations) (deepCopy .Values.commonAnnotations) }}
+      {{- if and .Values.simulations.inline (not .Values.simulations.existingConfigMap) }}
+      {{- $checksum := include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+      {{- $podAnnotations = merge $podAnnotations (dict "checksum/simulations" $checksum) }}
+      {{- end }}
+      {{- if and .Values.auth.enabled (not .Values.auth.existingSecret) }}
+      {{- $checksum := include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
+      {{- $podAnnotations = merge $podAnnotations (dict "checksum/auth" $checksum) }}
+      {{- end }}
+      {{- with $podAnnotations }}
+      annotations:
+        {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 8 }}
+      {{- end }}
+    spec:
+      serviceAccountName: {{ include "hoverfly.serviceAccountName" . }}
+      automountServiceAccountToken: {{ .Values.serviceAccount.automount }}
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.podSecurityContext }}
+      securityContext:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . }}
+      {{- end }}
+      {{- with .Values.schedulerName }}
+      schedulerName: {{ . }}
+      {{- end }}
+      {{- with .Values.dnsPolicy }}
+      dnsPolicy: {{ . }}
+      {{- end }}
+      {{- with .Values.dnsConfig }}
+      dnsConfig:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.hostAliases }}
+      hostAliases:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      terminationGracePeriodSeconds: {{ .Values.terminationGracePeriodSeconds }}
+      {{- if or .Values.initContainers (and $sidecar .Values.snapshot.nativeSidecar) }}
+      initContainers:
+        {{- with .Values.initContainers }}
+        {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 8 }}
+        {{- end }}
+        {{- if and $sidecar .Values.snapshot.nativeSidecar }}
+        - {{ include "hoverfly.snapshotContainer" . | nindent 10 | trim }}
+        {{- end }}
+      {{- end }}
+      containers:
+        - name: hoverfly
+          image: {{ include "hoverfly.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          {{- if include "hoverfly.needsShell" . }}
+          # A shell is only used to decide two things at runtime: whether a
+          # persisted snapshot exists, and whether credentials must be appended.
+          # Flags themselves arrive through `args` and are forwarded as "$@",
+          # so no value is ever interpolated into shell source.
+          command:
+            - /bin/sh
+            - -c
+            - |
+              {{- include "hoverfly.script.entrypoint" . | nindent 14 }}
+            - hoverfly
+          {{- else }}
+          command:
+            - /bin/hoverfly
+          {{- end }}
+          args:
+            {{- include "hoverfly.args" . | nindent 12 }}
+          env:
+            {{- if .Values.persistence.enabled }}
+            - name: HOVERFLY_STATE_TMP
+              value: {{ printf "%s.prestop.tmp" (include "hoverfly.stateFile" .) | quote }}
+            {{- end }}
+            {{- include "hoverfly.runtimeEnv" . | nindent 12 }}
+            {{- with .Values.extraEnv }}
+            {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 12 }}
+            {{- end }}
+          {{- with .Values.extraEnvFrom }}
+          envFrom:
+            {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 12 }}
+          {{- end }}
+          ports:
+            - name: admin
+              containerPort: {{ .Values.hoverfly.adminPort }}
+              protocol: TCP
+            - name: proxy
+              containerPort: {{ .Values.hoverfly.proxyPort }}
+              protocol: TCP
+          {{- if .Values.startupProbe.enabled }}
+          startupProbe:
+            {{- toYaml (omit .Values.startupProbe "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if .Values.livenessProbe.enabled }}
+          livenessProbe:
+            {{- toYaml (omit .Values.livenessProbe "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if .Values.readinessProbe.enabled }}
+          readinessProbe:
+            {{- toYaml (omit .Values.readinessProbe "enabled") | nindent 12 }}
+          {{- end }}
+          {{- if .Values.persistence.enabled }}
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - |
+                    {{- include "hoverfly.script.preStop" . | nindent 20 }}
+          {{- end }}
+          {{- with .Values.securityContext }}
+          securityContext:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          volumeMounts:
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
+            {{- end }}
+            {{- if include "hoverfly.simulations.mounted" . }}
+            - name: simulations
+              mountPath: {{ .Values.simulations.mountPath }}
+              readOnly: true
+            {{- end }}
+            {{- if .Values.securityContext.readOnlyRootFilesystem }}
+            - name: tmp
+              mountPath: /tmp
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 12 }}
+            {{- end }}
+        {{- if and $sidecar (not .Values.snapshot.nativeSidecar) }}
+        - {{ include "hoverfly.snapshotContainer" . | nindent 10 | trim }}
+        {{- end }}
+        {{- with .Values.sidecars }}
+        {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 8 }}
+        {{- end }}
+      volumes:
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ include "hoverfly.pvcName" . }}
+        {{- end }}
+        {{- if include "hoverfly.simulations.mounted" . }}
+        - name: simulations
+          configMap:
+            name: {{ include "hoverfly.simulations.configMapName" . }}
+        {{- end }}
+        {{- if $tmp }}
+        - name: tmp
+          emptyDir: {}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- include "hoverfly.tplvalues" (dict "value" . "context" $) | nindent 8 }}
+        {{- end }}
