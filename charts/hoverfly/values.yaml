@@ -153,7 +153,10 @@ snapshot:
   # -- Run as a native sidecar (init container with `restartPolicy: Always`) so it
   # terminates after the main container. Requires Kubernetes >= 1.29.
   nativeSidecar: false
-  # -- Image overrides for the sidecar. Unset fields fall back to `image`.
+  # -- Image overrides for the sidecar. Unset fields fall back to `image`, except
+  # that `tag` and `digest` are inherited as a pair: setting either one here stops
+  # both from being inherited, so a pinned `image.digest` cannot outrank the tag
+  # you set for the sidecar.
   image: {}
   # -- Resource requests and limits for the sidecar.
   resources:

@@ -243,6 +243,9 @@ Two caveats worth knowing:
 
 Set `snapshot.nativeSidecar=true` on Kubernetes 1.29+ to run the snapshotter as a native
 sidecar, which guarantees it terminates *after* the main container rather than racing it.
+Older clusters silently ignore `restartPolicy` on an init container, which would leave the
+snapshot loop running as an ordinary init container that never exits -- so the chart refuses
+to render below 1.29 rather than let you find out through a Pod that never starts.
 
 ## Supplying simulations declaratively
 

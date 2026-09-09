@@ -91,3 +91,36 @@ tests:
           path: spec.template.spec.containers[0].livenessProbe
       - exists:
           path: spec.template.spec.containers[0].readinessProbe
+
+  # `securityContext: null` in a values file, or a key left with no value under
+  # it, removes the section from the merged values entirely. The templates read
+  # its fields directly, so an unparenthesised access turns that into a nil
+  # pointer at render time rather than the "use the chart's defaults" the user
+  # meant. Sections a user has a real reason to blank out must survive it.
+  - it: renders with the hardening sections blanked out
+    set:
+      securityContext: null
+      podSecurityContext: null
+      resources: null
+    asserts:
+      - hasDocuments:
+          count: 1
+      - notExists:
+          path: spec.template.spec.containers[0].securityContext
+      # No readOnlyRootFilesystem means no /tmp scratch mount to go with it,
+      # and with nothing else mounted the Pod has no volumes at all.
+      - notExists:
+          path: spec.template.spec.volumes
+
+  - it: renders with every probe blanked out
+    set:
+      startupProbe: null
+      livenessProbe: null
+      readinessProbe: null
+    asserts:
+      - notExists:
+          path: spec.template.spec.containers[0].startupProbe
+      - notExists:
+          path: spec.template.spec.containers[0].livenessProbe
+      - notExists:
+          path: spec.template.spec.containers[0].readinessProbe

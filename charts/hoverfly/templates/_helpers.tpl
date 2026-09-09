@@ -102,7 +102,19 @@ Fully qualified image reference. A digest, when set, wins over the tag.
 Image used by the snapshot sidecar. Unset fields fall back to .Values.image.
 */}}
 {{- define "hoverfly.snapshot.image" -}}
-{{- $image := merge (deepCopy (.Values.snapshot.image | default dict)) (deepCopy .Values.image) -}}
+{{- $override := .Values.snapshot.image | default dict -}}
+{{- $base := deepCopy .Values.image -}}
+{{- /*
+tag and digest name the same thing two different ways, and `hoverfly.image`
+prefers the digest. Inheriting them field by field would therefore let the main
+image's digest silently outrank an explicit snapshot.image.tag -- the sidecar
+would run whatever the main image is pinned to. Drop both from the inherited
+half as soon as the override supplies either one.
+*/ -}}
+{{- if or $override.tag $override.digest -}}
+{{- $base = omit $base "tag" "digest" -}}
+{{- end -}}
+{{- $image := merge (deepCopy $override) $base -}}
 {{- include "hoverfly.image" (dict "Values" (dict "image" $image) "Chart" .Chart) -}}
 {{- end }}
 
@@ -365,6 +377,11 @@ otherwise surface as a stuck Pod or a confusing API error.
 {{- if and .Values.persistence.enabled (gt (int .Values.replicaCount) 1) -}}
 {{- if not (has "ReadWriteMany" .Values.persistence.accessModes) -}}
 {{- $errors = append $errors "  - persistence.enabled=true with replicaCount>1 requires persistence.accessModes to contain ReadWriteMany.\n    With ReadWriteOnce only one Pod can attach the volume and the others stay Pending forever.\n    Either set replicaCount=1, or use a ReadWriteMany StorageClass." -}}
+{{- end -}}
+{{- end -}}
+{{- if and .Values.persistence.enabled .Values.snapshot.enabled .Values.snapshot.nativeSidecar -}}
+{{- if not (semverCompare ">=1.29.0-0" .Capabilities.KubeVersion.Version) -}}
+{{- $errors = append $errors (printf "  - snapshot.nativeSidecar=true needs Kubernetes 1.29 or newer; this cluster reports %s.\n    A native sidecar is an initContainer carrying `restartPolicy: Always`, and an older kubelet simply\n    ignores that field: the snapshot loop would run as an ordinary init container, never exit, and the\n    Pod would never reach the main container.\n    Set snapshot.nativeSidecar=false to get a plain sidecar container instead." .Capabilities.KubeVersion.Version) -}}
 {{- end -}}
 {{- end -}}
 {{- if and .Values.auth.enabled (not .Values.auth.existingSecret) (not .Values.auth.password) -}}

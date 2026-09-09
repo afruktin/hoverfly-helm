@@ -79,12 +79,34 @@ jobs:
         run: |
           for kube in 1.23.0 1.34.0; do
             for values in charts/hoverfly/ci/*-values.yaml; do
+              # snapshot.nativeSidecar is rejected below 1.29 on purpose; the
+              # step below asserts that rather than skipping past it.
+              if [ "$kube" = 1.23.0 ] &&
+                 [ "$values" = charts/hoverfly/ci/snapshot-native-values.yaml ]; then
+                continue
+              fi
               echo "--- kube-version=$kube $values"
               helm template rel charts/hoverfly \
                 --kube-version "$kube" \
                 --values "$values" >/dev/null
             done
           done
+
+      # A native sidecar is an initContainer with `restartPolicy: Always`, which a
+      # pre-1.29 kubelet ignores -- the snapshot loop would run as a plain init
+      # container and never exit, hanging the Pod before hoverfly ever starts. The
+      # guard that prevents that is only useful while it still fires, so pin both
+      # sides of the boundary here.
+      - name: Assert the native-sidecar guard holds at the 1.29 boundary
+        if: steps.list-changed.outputs.changed == 'true'
+        run: |
+          if helm template rel charts/hoverfly --kube-version 1.28.15 \
+               --values charts/hoverfly/ci/snapshot-native-values.yaml >/dev/null 2>&1; then
+            echo "snapshot.nativeSidecar rendered on 1.28: the guard is gone" >&2
+            exit 1
+          fi
+          helm template rel charts/hoverfly --kube-version 1.29.0 \
+            --values charts/hoverfly/ci/snapshot-native-values.yaml >/dev/null
 
       # Documentation drifts silently. Every values example in the chart README is
       # templated here, so a renamed value or a new validation breaks the build

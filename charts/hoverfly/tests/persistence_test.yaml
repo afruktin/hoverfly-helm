@@ -88,6 +88,9 @@ tests:
     # container, so the final preStop dump cannot be raced by a snapshot.
     templates:
       - templates/deployment.yaml
+    capabilities:
+      majorVersion: 1
+      minorVersion: 29
     set:
       persistence.enabled: true
       snapshot.enabled: true
@@ -157,3 +160,81 @@ tests:
             persistentVolumeClaim:
               claimName: my-claim
         template: templates/deployment.yaml
+
+  # snapshot.image inherits the unset halves of image, but tag and digest name
+  # the same thing and hoverfly.image prefers the digest. Inheriting them one
+  # field at a time let a pinned image.digest outrank an explicit
+  # snapshot.image.tag, so the sidecar quietly ran the main image instead.
+  - it: does not let the main image digest shadow an explicit snapshot tag
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+      image.digest: sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
+      snapshot.image.tag: v1.11.0
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker.io/spectolabs/hoverfly@sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: docker.io/spectolabs/hoverfly:v1.11.0
+
+  - it: does not let the main image tag shadow an explicit snapshot digest
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+      image.tag: v1.12.13
+      snapshot.image.digest: sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[0].image
+          value: docker.io/spectolabs/hoverfly:v1.12.13
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: docker.io/spectolabs/hoverfly@sha256:aaaabbbbccccddddeeeeffff00001111222233334444555566667777888899990
+
+  - it: still inherits the main tag when only the snapshot repository is overridden
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+      image.tag: v1.12.13
+      snapshot.image.repository: curlimages/curl
+    asserts:
+      - equal:
+          path: spec.template.spec.containers[1].image
+          value: docker.io/curlimages/curl:v1.12.13
+
+  # An older kubelet ignores restartPolicy on an init container, so the snapshot
+  # loop would run as a plain init container and never exit -- the Pod would hang
+  # before the main container ever started.
+  - it: rejects the native sidecar below Kubernetes 1.29
+    templates:
+      - templates/deployment.yaml
+    capabilities:
+      majorVersion: 1
+      minorVersion: 28
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+      snapshot.nativeSidecar: true
+    asserts:
+      - failedTemplate:
+          errorPattern: snapshot.nativeSidecar=true needs Kubernetes 1.29 or newer
+
+  - it: does not complain about the native sidecar when no sidecar is rendered
+    templates:
+      - templates/deployment.yaml
+    capabilities:
+      majorVersion: 1
+      minorVersion: 23
+    set:
+      snapshot.nativeSidecar: true
+    asserts:
+      - hasDocuments:
+          count: 1

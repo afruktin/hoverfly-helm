@@ -3,6 +3,18 @@
   "title": "Hoverfly chart values",
   "type": "object",
   "additionalProperties": false,
+  "$comment": "These sections are dereferenced field-by-field by the templates. Setting one to null (or listing the key with no value) removes it from the merged values and would surface as a nil pointer deep inside a template, so it is rejected here with a readable message instead. To drop the chart's defaults for a section, set it to {} rather than null.",
+  "required": [
+    "image",
+    "serviceAccount",
+    "hoverfly",
+    "auth",
+    "simulations",
+    "persistence",
+    "snapshot",
+    "service",
+    "ingress"
+  ],
   "definitions": {
     "quantity": {
       "type": "string",
