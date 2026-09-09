@@ -74,6 +74,8 @@
         "proxyPort": { "type": "integer", "minimum": 1, "maximum": 65535 },
         "listenOnHost": { "type": "string" },
         "webserver": { "type": "boolean" },
+        "mode": { "type": "string", "enum": ["simulate", "capture", "spy", "diff", "synthesize", "modify"] },
+        "captureOnMiss": { "type": "boolean" },
         "logLevel": { "type": "string", "enum": ["panic", "fatal", "error", "warn", "info", "debug"] },
         "logsFormat": { "type": "string", "enum": ["plaintext", "json"] },
         "journalSize": { "type": "integer", "minimum": 0 },

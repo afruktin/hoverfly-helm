@@ -71,7 +71,7 @@ tests:
       hoverfly.webserver: false
       hoverfly.journalSize: 0
       hoverfly.extraArgs:
-        - -spy
+        - -metrics
     asserts:
       - notContains:
           path: spec.template.spec.containers[0].args
@@ -81,7 +81,7 @@ tests:
           content: -journal-size=0
       - contains:
           path: spec.template.spec.containers[0].args
-          content: -spy
+          content: -metrics
 
   - it: omits a probe that is disabled
     set:

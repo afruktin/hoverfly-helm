@@ -1,6 +1,6 @@
 apiVersion: v2
 name: hoverfly
-description: Hoverfly API simulator, with optional persistence of recorded simulations across Pod restarts
+description: Hoverfly API simulator, with optional persistence of simulations across Pod restarts
 type: application
 version: 0.1.0
 appVersion: "v1.12.13"

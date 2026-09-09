@@ -49,7 +49,17 @@ hoverfly:
   # otherwise Hoverfly only listens on loopback and the Pod never becomes Ready.
   listenOnHost: "0.0.0.0"
   # -- Run as a webserver in simulate mode instead of a forward proxy (`-webserver`).
+  # In webserver mode Hoverfly refuses to switch to `capture` or `modify`, and
+  # `hoverfly.mode` is ignored entirely -- see the mode table in the README.
   webserver: true
+  # -- Startup mode: `simulate`, `capture`, `spy`, `diff`, `synthesize` or `modify`.
+  # The mode is NOT part of the persisted snapshot, so a mode set at runtime through
+  # the admin API is lost on restart. Set it here to make it survive.
+  # Requires `webserver: false` for anything other than `simulate`.
+  mode: simulate
+  # -- Capture requests that miss the simulation (`-capture-on-miss`).
+  # Only meaningful with `mode: spy`.
+  captureOnMiss: false
   # -- Log level (`-log-level`): panic, fatal, error, warn, info or debug.
   logLevel: info
   # -- Log format (`-logs`): plaintext or json.
@@ -70,7 +80,9 @@ hoverfly:
   middleware: ""
   # -- Regex limiting which destinations are intercepted (`-destination`).
   destination: ""
-  # -- Additional raw flags appended verbatim, for example `["-spy", "-journal-size=5000"]`.
+  # -- Additional raw flags appended verbatim, for example `["-metrics", "-journal-size=5000"]`.
+  # Mode flags (`-capture`, `-spy`, `-diff`, `-synthesize`, `-modify`, `-webserver`) are
+  # rejected here: use `hoverfly.mode` and `hoverfly.webserver` instead.
   extraArgs: []
 
 auth:

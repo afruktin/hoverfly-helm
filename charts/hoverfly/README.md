@@ -1,6 +1,6 @@
 # hoverfly
 
-Hoverfly API simulator, with optional persistence of recorded simulations across Pod restarts
+Hoverfly API simulator, with optional persistence of simulations across Pod restarts
 
 **Homepage:** <https://hoverfly.io>
 
@@ -14,8 +14,10 @@ helm install my-hoverfly hoverfly/hoverfly
 
 ## Introduction
 
-[Hoverfly](https://hoverfly.io) is an API simulator: it records real traffic and replays it,
-so tests run against a stand-in for a slow, rate-limited or not-yet-built dependency.
+[Hoverfly](https://hoverfly.io) is an API simulator: it stands in for a slow, rate-limited or
+not-yet-built dependency, either replaying simulations you supply through its admin API or
+recording real traffic itself. Recording needs a forward proxy, so it is off on the default
+values -- see [Choosing a mode](#choosing-a-mode).
 
 Hoverfly keeps simulations **in memory** and never writes them to disk on its own, so a Pod
 restart normally throws away everything recorded. This chart can persist them: a `preStop`
@@ -48,6 +50,38 @@ helm uninstall my-hoverfly
 ```
 
 The PVC is deleted with the release unless you set `persistence.retain=true`.
+
+## Choosing a mode
+
+`hoverfly.mode` decides what Hoverfly does with the traffic it receives.
+
+| `hoverfly.mode` | Flag | What it does | Also needs |
+|---|---|---|---|
+| `simulate` (default) | none | Replays the simulation, errors on a miss | |
+| `capture` | `-capture` | Records traffic passing through the proxy into the simulation | `webserver: false` |
+| `spy` | `-spy` | Replays what it has, calls the real server on a miss | `webserver: false` |
+| `diff` | `-diff` | Calls the real server and reports differences against the simulation | `webserver: false` |
+| `synthesize` | `-synthesize` | Generates every response with middleware | `webserver: false`, `hoverfly.middleware` |
+| `modify` | `-modify` | Runs middleware over traffic in both directions | `webserver: false`, `hoverfly.middleware` |
+
+Two things about modes that reliably cost people an afternoon.
+
+**`webserver: true` pins the mode to `simulate`.** Hoverfly picks the startup mode with
+`if webserver { return simulate }`, *before* it looks at any mode flag -- so a mode set
+alongside it is ignored with no warning and no error. This chart refuses the combination
+instead. Webserver mode also rejects switching to `capture` or `modify` at runtime:
+`PUT /api/v2/hoverfly/mode` answers with an error.
+
+**The mode is not part of a snapshot.** What gets dumped is `data` (pairs, delays, literals,
+variables) plus `meta` -- no mode. A mode set at runtime through the admin API is therefore
+gone after a restart, and the Pod comes back in whatever `hoverfly.mode` says. If you record
+with `capture`, set it here rather than switching through the API, or the Pod quietly returns
+in `simulate` and stops recording.
+
+Flags the chart does not model go in `hoverfly.extraArgs` -- except mode flags. `-capture`,
+`-spy`, `-diff`, `-synthesize`, `-modify` and `-webserver` are rejected there, because Hoverfly
+exits with `Two or more modes supplied` the moment it sees two of them, and because a mode
+smuggled in that way is invisible to the checks above.
 
 ## Persisting simulations across restarts
 
@@ -176,10 +210,12 @@ with comments, in [values.yaml](values.yaml) and validated by `values.schema.jso
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | hoverfly.logLevel | string | `"info"` | Log level (`-log-level`): panic, fatal, error, warn, info or debug. |
-| hoverfly.webserver | bool | `true` | Run as a webserver in simulate mode instead of a forward proxy (`-webserver`). |
+| hoverfly.webserver | bool | `true` | Run as a webserver in simulate mode instead of a forward proxy (`-webserver`). Pins the mode to `simulate`. |
+| hoverfly.mode | string | `"simulate"` | Startup mode: `simulate`, `capture`, `spy`, `diff`, `synthesize` or `modify`. Not part of the persisted snapshot, so a mode set through the admin API is lost on restart. Anything but `simulate` requires `webserver: false`. |
+| hoverfly.captureOnMiss | bool | `false` | Capture requests that miss the simulation (`-capture-on-miss`). Only valid with `mode: spy`. |
 | hoverfly.upstreamProxy | string | `""` | Upstream proxy to route traffic through (`-upstream-proxy`). |
 | hoverfly.middleware | string | `""` | Middleware to run, as `<binary> <script path>` (`-middleware`). |
-| hoverfly.extraArgs | list | `[]` | Additional raw flags appended verbatim, for example `["-spy", "-journal-size=5000"]`. |
+| hoverfly.extraArgs | list | `[]` | Additional raw flags appended verbatim, for example `["-metrics", "-journal-size=5000"]`. Mode flags are rejected here; use `hoverfly.mode`. |
 
 ### Persistence
 
