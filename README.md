@@ -40,7 +40,9 @@ every pull request, and `ct install` installs the chart once per file in
 [charts/hoverfly/ci/](charts/hoverfly/ci/) -- defaults, persistence, the snapshot sidecar in
 both its plain and native form, `-auth`, declarative simulations and proxy mode -- waiting for
 readiness and running the `helm test` hook each time. Each file says in its header what a green
-run proves.
+run proves. For a patch release `ct install --upgrade` also installs the previous release from
+`main` with the same file and upgrades it in place, so the promise that a patch release needs no
+action is tested rather than assumed.
 
 A second job, [.github/scripts/e2e-persistence.sh](.github/scripts/e2e-persistence.sh), covers
 what an install alone cannot: it posts a simulation, replaces the Pod and checks the simulation
