@@ -62,11 +62,18 @@ because a cluster with no ingress controller cannot make it ready.
 
 ## Releasing
 
-Bump `version` in `charts/hoverfly/Chart.yaml` and merge to the default branch.
+Bump `version` in `charts/hoverfly/Chart.yaml` as the
+[versioning policy](charts/hoverfly/README.md#versioning) says, list the changes in the
+`artifacthub.io/changes` annotation, and merge the pull request to the default branch.
 [chart-releaser](https://github.com/helm/chart-releaser-action) packages the chart,
 creates a GitHub release and updates `index.yaml` on the `gh-pages` branch.
+
+Always release through a pull request. chart-testing only tests charts that changed against
+`main`, so a direct push to `main` finds nothing changed and passes without running a single
+test.
 
 ## License
 
 [MIT](LICENSE). This covers the chart only — Hoverfly itself is distributed by
-[SpectoLabs](https://github.com/SpectoLabs/hoverfly) under the Apache License 2.0.
+[SpectoLabs](https://github.com/SpectoLabs/hoverfly) under the Apache License 2.0. The chart is
+community-maintained and not affiliated with SpectoLabs.
