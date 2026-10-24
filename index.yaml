@@ -4,6 +4,65 @@ entries:
   - annotations:
       artifacthub.io/category: integration-delivery
       artifacthub.io/changes: |
+        - kind: changed
+          description: Hoverfly v1.12.16, up from v1.12.13 -- Go runtime and dependency updates, no flag changes
+          links:
+            - name: Hoverfly v1.12.16 release notes
+              url: https://github.com/SpectoLabs/hoverfly/releases/tag/v1.12.16
+        - kind: fixed
+          description: The preStop hook and the snapshot sidecar no longer wait up to 15 minutes on a hung admin API; an export gives up after persistence.exportTimeoutSeconds of silence and keeps the previous snapshot
+        - kind: added
+          description: persistence.exportTimeoutSeconds, 30 by default; it counts idle time, so a large export that keeps streaming is never cut off
+        - kind: changed
+          description: The snapshot sidecar logs a failed snapshot instead of dropping it silently
+        - kind: added
+          description: Upgrading section in the chart README with the versioning policy and notes for every minor release
+        - kind: added
+          description: CI upgrades the previous release in place for every patch release
+      artifacthub.io/images: |
+        - name: hoverfly
+          image: docker.io/spectolabs/hoverfly:v1.12.16
+      artifacthub.io/license: MIT
+      artifacthub.io/links: |
+        - name: Chart source
+          url: https://github.com/afruktin/hoverfly-helm
+        - name: Hoverfly documentation
+          url: https://docs.hoverfly.io
+        - name: support
+          url: https://github.com/afruktin/hoverfly-helm/issues
+    apiVersion: v2
+    appVersion: v1.12.16
+    created: "2026-10-24T17:20:00.166846609Z"
+    description: Hoverfly API simulator, with optional persistence of simulations
+      across Pod restarts
+    digest: b6ab01157b55d22f2eaf7ab0f83d636026bf68b1d790907927551767c94619db
+    home: https://hoverfly.io
+    icon: https://raw.githubusercontent.com/SpectoLabs/hoverfly/master/docs/_static/logo-large.png
+    keywords:
+    - hoverfly
+    - api
+    - api-simulation
+    - service-virtualization
+    - mock
+    - stub
+    - testing
+    - proxy
+    kubeVersion: '>=1.23.0-0'
+    maintainers:
+    - email: 68115238+afruktin@users.noreply.github.com
+      name: Artyom Fruktin
+      url: https://github.com/afruktin
+    name: hoverfly
+    sources:
+    - https://github.com/afruktin/hoverfly-helm
+    - https://github.com/SpectoLabs/hoverfly
+    type: application
+    urls:
+    - https://github.com/afruktin/hoverfly-helm/releases/download/v0.2.1/hoverfly-0.2.1.tgz
+    version: 0.2.1
+  - annotations:
+      artifacthub.io/category: integration-delivery
+      artifacthub.io/changes: |
         - kind: added
           description: hoverfly.mode selects the startup mode (simulate, capture, spy, diff, synthesize, modify)
         - kind: added
@@ -111,4 +170,4 @@ entries:
     urls:
     - https://github.com/afruktin/hoverfly-helm/releases/download/v0.1.0/hoverfly-0.1.0.tgz
     version: 0.1.0
-generated: "2026-09-09T13:20:06.315447486Z"
+generated: "2026-10-24T17:20:00.166862419Z"
