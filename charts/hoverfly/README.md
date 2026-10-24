@@ -240,6 +240,10 @@ Two caveats worth knowing:
   contains `ReadWriteMany`.
 - The preStop hook needs to finish within `terminationGracePeriodSeconds`. Raise it if you
   record large simulations.
+- An export that hears nothing from the admin API for `persistence.exportTimeoutSeconds`
+  (30 by default) gives up and leaves the previous snapshot in place; the sidecar logs every
+  such failure. The limit counts idle time, so a large export that keeps streaming is never
+  cut off.
 
 Set `snapshot.nativeSidecar=true` on Kubernetes 1.29+ to run the snapshotter as a native
 sidecar, which guarantees it terminates *after* the main container rather than racing it.
@@ -358,6 +362,7 @@ with comments, in [values.yaml](values.yaml) and validated by `values.schema.jso
 | persistence.storageClass | string | `""` | StorageClass for the PVC. `""` uses the cluster default; `"-"` disables dynamic provisioning. |
 | persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one. |
 | persistence.retain | bool | `false` | Keep the PVC on `helm uninstall` (`helm.sh/resource-policy: keep`). |
+| persistence.exportTimeoutSeconds | int | `30` | Seconds the preStop hook and the snapshot sidecar wait on a silent admin API before giving up on an export (`wget -T`); the previous snapshot stays in place. |
 | snapshot.enabled | bool | `false` | Run a sidecar that periodically dumps the simulation to the volume, so an OOMKill (where preStop never runs) loses at most one interval of traffic. Only takes effect together with `persistence.enabled`. |
 | snapshot.intervalSeconds | int | `600` | Seconds between snapshots. |
 | snapshot.nativeSidecar | bool | `false` | Run as a native sidecar (init container with `restartPolicy: Always`) so it terminates after the main container. Requires Kubernetes >= 1.29. |

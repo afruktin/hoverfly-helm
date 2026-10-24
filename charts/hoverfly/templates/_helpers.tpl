@@ -259,13 +259,18 @@ string, so no value here can break out of its argument.
 Shell functions shared by the entrypoint wrapper, the preStop hook and the
 snapshot sidecar. Everything variable is read from the environment, so no
 user-supplied value is ever interpolated into shell source.
+
+Every wget carries -T: BusyBox waits 900 seconds on a silent server by default,
+so a single hung export would stall the snapshot loop for a quarter of an hour.
+-T counts idle seconds, not total ones, so a large export that keeps streaming
+is never cut off.
 */}}
 {{- define "hoverfly.script.lib" -}}
 hf_token() {
   [ "${HOVERFLY_AUTH_ENABLED:-false}" = "true" ] || return 0
   _u=$(printf '%s' "${HOVERFLY_ADMIN_USERNAME:-}" | sed 's/[\\"]/\\&/g')
   _p=$(printf '%s' "${HOVERFLY_ADMIN_PASSWORD:-}" | sed 's/[\\"]/\\&/g')
-  wget -q -O - --header='Content-Type: application/json' \
+  wget -q -T "${HOVERFLY_EXPORT_TIMEOUT:-30}" -O - --header='Content-Type: application/json' \
     --post-data="{\"username\":\"${_u}\",\"password\":\"${_p}\"}" \
     "${HOVERFLY_ADMIN_URL}/api/token-auth" 2>/dev/null |
     sed -n 's/.*"token"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
@@ -275,10 +280,10 @@ hf_snapshot() {
   _tmp="${HOVERFLY_STATE_TMP:-${HOVERFLY_STATE_FILE}.tmp}"
   _tok=$(hf_token || true)
   if [ -n "${_tok}" ]; then
-    wget -q -O "${_tmp}" --header="Authorization: Bearer ${_tok}" \
+    wget -q -T "${HOVERFLY_EXPORT_TIMEOUT:-30}" -O "${_tmp}" --header="Authorization: Bearer ${_tok}" \
       "${HOVERFLY_ADMIN_URL}/api/v2/simulation" || { rm -f "${_tmp}"; return 1; }
   else
-    wget -q -O "${_tmp}" "${HOVERFLY_ADMIN_URL}/api/v2/simulation" || { rm -f "${_tmp}"; return 1; }
+    wget -q -T "${HOVERFLY_EXPORT_TIMEOUT:-30}" -O "${_tmp}" "${HOVERFLY_ADMIN_URL}/api/v2/simulation" || { rm -f "${_tmp}"; return 1; }
   fi
   if [ -s "${_tmp}" ]; then
     mv -f "${_tmp}" "${HOVERFLY_STATE_FILE}"
@@ -314,7 +319,9 @@ hf_snapshot || true
 
 {{/*
 Snapshot sidecar: periodic dump, so an OOMKill (where preStop never runs)
-loses at most one interval of recorded traffic.
+loses at most one interval of recorded traffic. A failed dump leaves the
+previous snapshot in place and says so in the sidecar's log, which is the only
+place a persistence failure can surface before the next restart.
 */}}
 {{- define "hoverfly.script.snapshotLoop" -}}
 {{ include "hoverfly.script.lib" . }}
@@ -322,7 +329,7 @@ trap 'hf_snapshot || true; exit 0' TERM INT
 while true; do
   sleep "${HOVERFLY_SNAPSHOT_INTERVAL}" &
   wait $!
-  hf_snapshot || true
+  hf_snapshot || echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) snapshot failed, keeping the previous one" >&2
 done
 {{- end }}
 
@@ -335,6 +342,8 @@ Environment shared by the hoverfly container and the snapshot sidecar.
 {{- if .Values.persistence.enabled }}
 - name: HOVERFLY_STATE_FILE
   value: {{ include "hoverfly.stateFile" . | quote }}
+- name: HOVERFLY_EXPORT_TIMEOUT
+  value: {{ .Values.persistence.exportTimeoutSeconds | quote }}
 {{- end }}
 {{- if .Values.auth.enabled }}
 - name: HOVERFLY_AUTH_ENABLED

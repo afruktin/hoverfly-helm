@@ -136,6 +136,10 @@ persistence:
   mountPath: /data
   # -- File name of the snapshot inside `mountPath`.
   filename: simulation.json
+  # -- Seconds the preStop hook and the snapshot sidecar wait on a silent admin API
+  # before giving up on an export (`wget -T`); the previous snapshot stays in place.
+  # It counts idle time, so a large export that keeps streaming is never cut off.
+  exportTimeoutSeconds: 30
   # -- Annotations for the PVC.
   annotations: {}
   # -- Labels for the PVC.

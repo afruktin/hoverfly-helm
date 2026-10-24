@@ -83,6 +83,72 @@ tests:
             name: HOVERFLY_STATE_TMP
             value: "/data/simulation.json.snapshot.tmp"
 
+  # BusyBox wget waits 900 seconds on a silent server by default, so a single
+  # hung export used to stall the snapshot loop for a quarter of an hour.
+  - it: gives every export a timeout and logs the ones that fail
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      snapshot.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOVERFLY_EXPORT_TIMEOUT
+            value: "30"
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: HOVERFLY_EXPORT_TIMEOUT
+            value: "30"
+      # No wget may go out without -T, in the hook or in the sidecar.
+      - notMatchRegex:
+          path: spec.template.spec.containers[0].lifecycle.preStop.exec.command[2]
+          pattern: wget -q -O
+      - notMatchRegex:
+          path: spec.template.spec.containers[1].command[2]
+          pattern: wget -q -O
+      - matchRegex:
+          path: spec.template.spec.containers[1].command[2]
+          pattern: wget -q -T "\$\{HOVERFLY_EXPORT_TIMEOUT:-30\}" -O "\$\{_tmp\}"
+      # The sidecar log is the only place a failed snapshot can surface before
+      # the next restart finds the file stale.
+      - matchRegex:
+          path: spec.template.spec.containers[1].command[2]
+          pattern: hf_snapshot \|\| echo .*snapshot failed, keeping the previous one" >&2
+
+  - it: passes a custom export timeout to both containers
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.exportTimeoutSeconds: 120
+      snapshot.enabled: true
+    asserts:
+      - contains:
+          path: spec.template.spec.containers[0].env
+          content:
+            name: HOVERFLY_EXPORT_TIMEOUT
+            value: "120"
+      - contains:
+          path: spec.template.spec.containers[1].env
+          content:
+            name: HOVERFLY_EXPORT_TIMEOUT
+            value: "120"
+
+  # `wget -T 0` disables the timeout altogether -- the very hang the value exists
+  # to prevent -- so the schema starts at 1.
+  - it: rejects an export timeout of zero
+    templates:
+      - templates/deployment.yaml
+    set:
+      persistence.enabled: true
+      persistence.exportTimeoutSeconds: 0
+    asserts:
+      - failedTemplate:
+          errorPattern: exportTimeoutSeconds
+
   - it: runs the snapshotter as a native sidecar on request
     # An init container with restartPolicy Always is stopped after the main
     # container, so the final preStop dump cannot be raced by a snapshot.
