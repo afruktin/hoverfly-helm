@@ -25,6 +25,9 @@ hook dumps `/api/v2/simulation` onto a volume and the next start imports the fil
 An optional sidecar snapshots the simulation periodically, covering an `OOMKill` where
 `preStop` never runs.
 
+This chart is community-maintained and not affiliated with SpectoLabs, the authors of
+Hoverfly. It runs the upstream `spectolabs/hoverfly` image unmodified.
+
 ## Prerequisites
 
 - Kubernetes 1.23+ (1.29+ if you enable `snapshot.nativeSidecar`)
@@ -240,6 +243,10 @@ Two caveats worth knowing:
   contains `ReadWriteMany`.
 - The preStop hook needs to finish within `terminationGracePeriodSeconds`. Raise it if you
   record large simulations.
+- An export that hears nothing from the admin API for `persistence.exportTimeoutSeconds`
+  (30 by default) gives up and leaves the previous snapshot in place; the sidecar logs every
+  such failure. The limit counts idle time, so a large export that keeps streaming is never
+  cut off.
 
 Set `snapshot.nativeSidecar=true` on Kubernetes 1.29+ to run the snapshotter as a native
 sidecar, which guarantees it terminates *after* the main container rather than racing it.
@@ -319,6 +326,51 @@ chart pins an unprivileged UID, drops all capabilities and mounts the root files
 read-only, with an `emptyDir` on `/tmp`. Relax `podSecurityContext` / `securityContext` if you
 add middleware that needs to write.
 
+## Upgrading
+
+### Versioning
+
+Until 1.0.0 the chart version follows the usual convention for a `0.x` line:
+
+- **A patch release** (`0.2.0` → `0.2.1`) never needs action. It carries fixes and
+  backward-compatible additions only, so a constraint such as `--version ~0.2` picks it up
+  safely.
+- **A minor release** (`0.2.x` → `0.3.0`) may need action, and every one is described below.
+
+A change counts as breaking, and therefore waits for a minor release, if it renames or removes
+a value, changes a default in a way that changes behaviour, changes resource names or selector
+labels (immutable fields, so the release would have to be reinstalled), raises the minimum
+Kubernetes version, or starts rejecting values that used to render.
+
+Hoverfly patch updates ship in chart patch releases; a Hoverfly release that changes behaviour
+waits for a chart minor release. Pin `image.tag` to stay on a specific Hoverfly version.
+
+### 0.2.0 → 0.2.1
+
+Nothing to do. The default image moves from Hoverfly v1.12.13 to v1.12.16, which updates the Go
+runtime and dependencies and changes no flags. Exports from the admin API gained a timeout,
+`persistence.exportTimeoutSeconds`.
+
+### 0.1.0 → 0.2.0
+
+- **A mode set through `hoverfly.extraArgs` is rejected.** The 0.1.0 values file suggested
+  `extraArgs: ["-spy", ...]`; 0.2.0 refuses `-capture`, `-spy`, `-diff`, `-synthesize`,
+  `-modify` and `-webserver` there. On the default values such a flag was ignored all along --
+  Hoverfly runs in `simulate` mode whenever `-webserver` is set. Move the mode to
+  `hoverfly.mode`, together with `hoverfly.webserver: false`, which every mode but `simulate`
+  needs, and drop a `-webserver` entry outright:
+
+  ```yaml
+  hoverfly:
+    webserver: false
+    mode: spy
+  ```
+
+- `snapshot.nativeSidecar: true` fails to render below Kubernetes 1.29 instead of producing a
+  Pod that never starts.
+- An explicit `snapshot.image.tag` wins over a pinned `image.digest`, so the sidecar runs the
+  image you named rather than the main one.
+
 ## Requirements
 
 Kubernetes: `>=1.23.0-0`
@@ -358,6 +410,7 @@ with comments, in [values.yaml](values.yaml) and validated by `values.schema.jso
 | persistence.storageClass | string | `""` | StorageClass for the PVC. `""` uses the cluster default; `"-"` disables dynamic provisioning. |
 | persistence.existingClaim | string | `""` | Use an existing PVC instead of creating one. |
 | persistence.retain | bool | `false` | Keep the PVC on `helm uninstall` (`helm.sh/resource-policy: keep`). |
+| persistence.exportTimeoutSeconds | int | `30` | Seconds the preStop hook and the snapshot sidecar wait on a silent admin API before giving up on an export (`wget -T`); the previous snapshot stays in place. |
 | snapshot.enabled | bool | `false` | Run a sidecar that periodically dumps the simulation to the volume, so an OOMKill (where preStop never runs) loses at most one interval of traffic. Only takes effect together with `persistence.enabled`. |
 | snapshot.intervalSeconds | int | `600` | Seconds between snapshots. |
 | snapshot.nativeSidecar | bool | `false` | Run as a native sidecar (init container with `restartPolicy: Always`) so it terminates after the main container. Requires Kubernetes >= 1.29. |
@@ -387,6 +440,7 @@ with comments, in [values.yaml](values.yaml) and validated by `values.schema.jso
 | ingress.enabled | bool | `false` | Create an Ingress. |
 | ingress.className | string | `""` | IngressClass name. |
 | ingress.hosts | list | `[{"host":"hoverfly.local","paths":[{"path":"/api/v2","pathType":"Prefix","servicePortName":"admin"},{"path":"/api/health","pathType":"Prefix","servicePortName":"admin"},{"path":"/dashboard","pathType":"Prefix","servicePortName":"admin"},{"path":"/","pathType":"Prefix","servicePortName":"proxy"}]}]` | Host rules. Each path may target a named Service port through `servicePortName`, which is how the admin API and the proxy get split across one hostname. |
+
 ## Maintainers
 
 | Name | Email | Url |

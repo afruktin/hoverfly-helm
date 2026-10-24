@@ -40,7 +40,9 @@ every pull request, and `ct install` installs the chart once per file in
 [charts/hoverfly/ci/](charts/hoverfly/ci/) -- defaults, persistence, the snapshot sidecar in
 both its plain and native form, `-auth`, declarative simulations and proxy mode -- waiting for
 readiness and running the `helm test` hook each time. Each file says in its header what a green
-run proves.
+run proves. For a patch release `ct install --upgrade` also installs the previous release from
+`main` with the same file and upgrades it in place, so the promise that a patch release needs no
+action is tested rather than assumed.
 
 A second job, [.github/scripts/e2e-persistence.sh](.github/scripts/e2e-persistence.sh), covers
 what an install alone cannot: it posts a simulation, replaces the Pod and checks the simulation
@@ -62,11 +64,18 @@ because a cluster with no ingress controller cannot make it ready.
 
 ## Releasing
 
-Bump `version` in `charts/hoverfly/Chart.yaml` and merge to the default branch.
+Bump `version` in `charts/hoverfly/Chart.yaml` as the
+[versioning policy](charts/hoverfly/README.md#versioning) says, list the changes in the
+`artifacthub.io/changes` annotation, and merge the pull request to the default branch.
 [chart-releaser](https://github.com/helm/chart-releaser-action) packages the chart,
 creates a GitHub release and updates `index.yaml` on the `gh-pages` branch.
+
+Always release through a pull request. chart-testing only tests charts that changed against
+`main`, so a direct push to `main` finds nothing changed and passes without running a single
+test.
 
 ## License
 
 [MIT](LICENSE). This covers the chart only — Hoverfly itself is distributed by
-[SpectoLabs](https://github.com/SpectoLabs/hoverfly) under the Apache License 2.0.
+[SpectoLabs](https://github.com/SpectoLabs/hoverfly) under the Apache License 2.0. The chart is
+community-maintained and not affiliated with SpectoLabs.

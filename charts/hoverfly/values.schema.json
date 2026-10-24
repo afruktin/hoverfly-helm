@@ -142,6 +142,7 @@
         "size": { "$ref": "#/definitions/quantity" },
         "mountPath": { "type": "string", "pattern": "^/.+" },
         "filename": { "type": "string", "minLength": 1, "pattern": "^[^/]+$" },
+        "exportTimeoutSeconds": { "type": "integer", "minimum": 1 },
         "annotations": { "$ref": "#/definitions/stringMap" },
         "labels": { "$ref": "#/definitions/stringMap" },
         "retain": { "type": "boolean" }

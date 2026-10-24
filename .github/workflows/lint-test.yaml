@@ -166,8 +166,14 @@ jobs:
           node_image: ${{ env.KIND_NODE_IMAGE }}
           cluster_name: chart-testing
 
+      # --upgrade also installs the previous release from main with each values
+      # file, runs its `helm test`, upgrades it in place to this revision and
+      # tests again -- but only for a bump that is non-breaking by SemVer. On the
+      # 0.x line ct reads that through `~`, so a patch release is upgrade-tested
+      # and a minor one, the only kind allowed to break, is skipped. That is the
+      # versioning policy in the chart README, enforced rather than promised.
       - name: Run chart-testing install
-        run: ct install --config .github/ct.yaml
+        run: ct install --config .github/ct.yaml --upgrade
 
   # `ct install` never restarts anything, so it cannot exercise the one feature
   # this chart exists for. This job posts a simulation, replaces the Pod and
